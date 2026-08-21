@@ -1,0 +1,154 @@
+// @vitest-environment jsdom
+import { describe, expect, it, vi } from "vitest";
+import { activateProviderTerminalPlugin, type ProviderTerminalPluginHost } from "./provider-terminal-plugin";
+globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as typeof ResizeObserver;
+
+describe("provider-backed terminal plugin", () => {
+  it("detaches presentation without ending the PTY session", async () => {
+    let view: { mount(container: HTMLElement, context: unknown): void; unmount?(container: HTMLElement): void } | undefined;
+    const requests: string[] = [];
+    const channel = {
+      send: vi.fn(async (request: Record<string, unknown>) => {
+        const command = String(request.command); requests.push(command);
+        if (command === "terminal.archived") {
+          return { ok: false, error: "not found", result: { code: "NOT_FOUND" } };
+        }
+        const data = command === "pty.open" ? { session: 7 }
+          : command === "pty.pane" ? { held: false }
+          : command === "terminal.prepareSession" ? { observerToken: "observer" } : {};
+        return { ok: true, result: { data } };
+      }),
+      stream: vi.fn(async () => ({
+        answer: { ok: true, result: { data: { startSeq: 0 } } },
+        close: { dispose: vi.fn() },
+      })),
+    };
+    const host: ProviderTerminalPluginHost = {
+      windowLabel: () => "window",
+      secrets: { generate: async () => ({ created: true }) },
+      sidecar: { open: async () => channel },
+      ui: { registerView: (_id, provider) => { view = provider; return { dispose() {} }; } },
+      commands: { register: () => ({ dispose() {} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
+    };
+    activateProviderTerminalPlugin(host, [], {
+      pluginId: "plugin", engineId: "vt100", providerUnit: "terminal-vt100", programId: "terminal-vt100",
+    });
+    const root = document.createElement("div"); document.body.append(root);
+    view!.mount(root, { viewId: "pane" });
+    await vi.waitFor(() => expect(requests).toContain("pty.open"));
+    view!.unmount?.(root);
+    await Promise.resolve();
+    expect(requests).not.toContain("pty.close");
+  });
+
+  it("rehydrates a live pane and attaches from its snapshot lease", async () => {
+    let view: { mount(container: HTMLElement, context: unknown): void } | undefined;
+    const requests: Array<{ command: string; payload: Record<string, unknown> }> = [];
+    const channel = {
+      send: vi.fn(async (request: Record<string, unknown>) => {
+        const command = String(request.command);
+        const payload = (request.args as { request: Record<string, unknown> }).request;
+        requests.push({ command, payload });
+        const data = command === "pty.pane" ? { held: true }
+          : command === "terminal.rehydrate" ? {
+            leaseToken: "lease", uptoSeq: 12,
+            frame: { cols: 2, rows: 1, cursor: [0, 1], alt_active: false, lines: [[{ text: "R", fg: "default", bg: "default", attrs: 0, wide: false }]] },
+          }
+          : command === "pty.open" ? { session: 7 } : {};
+        return { ok: true, result: { data } };
+      }),
+      stream: vi.fn(async (request: Record<string, unknown>) => ({
+        answer: { ok: true, result: { data: { startSeq: 12 } } },
+        close: { dispose() {} },
+        request,
+      })),
+    };
+    const host: ProviderTerminalPluginHost = {
+      windowLabel: () => "window",
+      secrets: { generate: async () => ({ created: true }) },
+      sidecar: { open: async () => channel },
+      ui: { registerView: (_id, provider) => { view = provider; return { dispose() {} }; } },
+      commands: { register: () => ({ dispose() {} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
+    };
+    activateProviderTerminalPlugin(host, [], {
+      pluginId: "plugin", engineId: "vt100", providerUnit: "terminal-vt100", programId: "terminal-vt100",
+    });
+    const root = document.createElement("div"); document.body.append(root);
+    view!.mount(root, { viewId: "pane" });
+    await vi.waitFor(() => expect(root.querySelector('[data-node="terminal-screen"]')?.textContent).toContain("R"));
+    expect(requests.map((item) => item.command)).toEqual(expect.arrayContaining([
+      "pty.pane", "terminal.ensureSession", "terminal.rehydrate",
+    ]));
+    expect(requests.map((item) => item.command)).not.toContain("terminal.frame");
+    const attach = channel.stream.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(attach.command).toBe("pty.attachLease");
+    expect(root.dataset.terminalRecovery).toBe("continued");
+    expect(root.dataset.terminalFidelity).toBe("complete");
+  });
+
+  it("renders the provider frame after the exact PTY sequence and sends input", async () => {
+    let view: { mount(container: HTMLElement, context: unknown): void } | undefined;
+    const commands = new Map<string, (params: Record<string, unknown>) => unknown>();
+    const writes: unknown[] = [];
+    let emit: ((bytes: Uint8Array) => void) | undefined;
+    const pty = {
+      send: vi.fn(async (request: Record<string, unknown>) => {
+        const command = request.command; writes.push(request);
+        const data = command === "pty.open" ? { session: 4 } : command === "pty.pane" ? { held: false } : {};
+        return { ok: true, result: { data } };
+      }),
+      stream: vi.fn(async (_request: unknown, handlers: { onBytes(bytes: Uint8Array): void }) => {
+        emit = handlers.onBytes; return { answer: { ok: true, result: { data: { startSeq: 10 } } }, close: { dispose() {} } };
+      }),
+    };
+    const provider = {
+      send: vi.fn(async (request: Record<string, unknown>) => {
+        const command = request.command;
+        if (command === "terminal.archived") return { ok: false, error: "not found", result: { code: "NOT_FOUND" } };
+        const data = command === "terminal.prepareSession" ? { observerToken: "obs" }
+          : command === "terminal.frame" ? { cols: 4, rows: 1, cursor: [0, 2], alt_active: false, lines: [[{ text: "OK", fg: "default", bg: "default", attrs: 0, wide: false }]] } : {};
+        return { ok: true, result: { data } };
+      }),
+      stream: vi.fn(),
+    };
+    const host: ProviderTerminalPluginHost = {
+      windowLabel: () => "window", secrets: { generate: vi.fn(async () => ({ created: true })) },
+      sidecar: { open: async (name) => name === "pty" ? pty : provider },
+      ui: { registerView: (_id, item) => { view = item; return { dispose() {} }; } },
+      commands: {
+        register: (name, spec) => { commands.set(name, (spec as { handler(p: Record<string, unknown>): unknown }).handler); return { dispose() {} }; },
+        execute: async () => ({ data: { loginShell: "/bin/zsh" } }),
+      },
+    };
+    activateProviderTerminalPlugin(host, [], { pluginId: "plugin", engineId: "vt100", providerUnit: "terminal-vt100", programId: "terminal-vt100" });
+    const root = document.createElement("div"); document.body.append(root); view!.mount(root, { viewId: "pane" });
+    await vi.waitFor(() => expect(emit).toBeTypeOf("function")); emit!(new Uint8Array([79, 75]));
+    await vi.waitFor(() => expect(root.querySelector('[data-node="terminal-screen"]')?.textContent).toContain("OK"));
+    expect(provider.send).toHaveBeenCalledWith(expect.objectContaining({ args: { request: expect.objectContaining({ afterSequence: 12 }) } }));
+    await commands.get("send")!({ view: "pane", data: "x" });
+    expect(writes).toContainEqual(expect.objectContaining({ command: "pty.write" }));
+  });
+
+  it("coalesces output while one provider frame is in flight", async () => {
+    let view: { mount(container: HTMLElement, context: unknown): void } | undefined; let emit: ((bytes: Uint8Array) => void) | undefined;
+    let release!: () => void; const blocked = new Promise<void>((resolve) => { release = resolve; });
+    const frameSequences: number[] = [];
+    const channel = () => ({
+      send: vi.fn(async (request: Record<string, unknown>) => {
+        const command = request.command; const asked = (request.args as { request: Record<string, unknown> }).request;
+        if (command === "terminal.frame") { frameSequences.push(Number(asked.afterSequence)); if (frameSequences.length === 1) await blocked; }
+        if (command === "terminal.archived") return { ok: false, error: "not found", result: { code: "NOT_FOUND" } };
+        const data = command === "pty.open" ? { session: 1 } : command === "terminal.prepareSession" ? { observerToken: "o" }
+          : command === "terminal.frame" ? { cols: 1, rows: 1, cursor: [0,0], alt_active: false, lines: [[]] } : {};
+        return { ok: true, result: { data } };
+      }),
+      stream: vi.fn(async (_r: unknown, h: { onBytes(bytes: Uint8Array): void }) => { emit = h.onBytes; return { answer: { ok: true, result: { data: { startSeq: 0 } } }, close: { dispose() {} } }; }),
+    });
+    const pty = channel(), provider = channel();
+    const host: ProviderTerminalPluginHost = { windowLabel: () => "w", secrets: { generate: async () => ({ created: true }) }, sidecar: { open: async (n) => n === "pty" ? pty : provider }, ui: { registerView: (_i,v) => { view=v; return { dispose(){} }; } }, commands: { register: () => ({ dispose(){} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) } };
+    activateProviderTerminalPlugin(host, [], { pluginId:"p", engineId:"e", providerUnit:"terminal-e", programId:"terminal-e" });
+    const root=document.createElement("div"); view!.mount(root,{viewId:"pane"}); await vi.waitFor(()=>expect(emit).toBeTypeOf("function"));
+    emit!(new Uint8Array([1])); emit!(new Uint8Array([2])); emit!(new Uint8Array([3])); release();
+    await vi.waitFor(()=>expect(frameSequences).toEqual([1,3]));
+  });
+});

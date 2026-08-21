@@ -1,0 +1,12 @@
+{
+  "name": "@soksak/soksak-kit-plugin-terminal",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "test": "vitest run", "typecheck": "tsc --noEmit" },
+  "dependencies": {
+    "@soksak/soksak-contract-plugin-terminal": "file:../../soksak-contracts/soksak-contract-plugin-terminal"
+  },
+  "devDependencies": { "jsdom": "30.0.1", "typescript": "5.9.3", "vitest": "3.2.4" }
+}
