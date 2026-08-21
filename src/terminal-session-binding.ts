@@ -50,7 +50,7 @@ export function createTerminalSessionBinding(
     id: `terminal-${++sequence}`, command, args: { request: value },
   });
   const answer = (response: Record<string, unknown>) => {
-    if (response.ok !== true) throw new Error(typeof response.error === "string" ? response.error : "unit refused");
+    if (response.ok !== true) throw new Error(typeof response.error === "string" ? response.error : "sidecar refused request");
     return ((response.result as { data?: unknown } | undefined)?.data ?? {}) as Record<string, unknown>;
   };
   let ptyPromise: Promise<TerminalSidecarChannel> | null = null;

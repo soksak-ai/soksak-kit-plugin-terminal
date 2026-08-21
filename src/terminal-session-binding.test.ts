@@ -2,6 +2,20 @@ import { describe, expect, it, vi } from "vitest";
 import { createTerminalSessionBinding, type TerminalSidecarChannel } from "./terminal-session-binding";
 
 describe("shared terminal session binding", () => {
+  it("identifies a sidecar when a response has no error detail", async () => {
+    const channel: TerminalSidecarChannel = {
+      send: vi.fn(async () => ({ ok: false })),
+      stream: vi.fn(),
+    };
+    const binding = createTerminalSessionBinding({
+      windowLabel: () => "window-a",
+      commands: { execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
+      sidecar: { open: async () => channel },
+    }, { ptyUnit: "pty", providerUnit: "terminal-vt100" });
+
+    await expect(binding.write(9, "x")).rejects.toThrow("sidecar refused request");
+  });
+
   it("opens atomically, ACKs absolute coordinates, buffers first bytes, and injects only a key name", async () => {
     const sent: Record<string, unknown>[] = [];
     let onBytes: ((bytes: Uint8Array) => void) | undefined;
