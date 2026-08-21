@@ -1,9 +1,47 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
 import { activateProviderTerminalPlugin, type ProviderTerminalPluginHost } from "./provider-terminal-plugin";
+import {
+  TERMINAL_PLUGIN_COMMANDS,
+  TERMINAL_PLUGIN_COMMAND_SCHEMAS,
+} from "@soksak/soksak-contract-plugin-terminal";
 globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as typeof ResizeObserver;
 
 describe("provider-backed terminal plugin", () => {
+  it("registers the common command contract exactly", async () => {
+    const registered = new Map<string, Record<string, unknown>>();
+    const host: ProviderTerminalPluginHost = {
+      windowLabel: () => "window",
+      secrets: { generate: async () => ({ created: true }) },
+      sidecar: { open: async () => ({
+        send: async () => ({ ok: true, result: { data: {} } }),
+        stream: async () => ({ answer: { ok: true, result: { data: {} } }, close: { dispose() {} } }),
+      }) },
+      ui: { registerView: () => ({ dispose() {} }) },
+      commands: {
+        register: (name, spec) => { registered.set(name, spec); return { dispose() {} }; },
+        execute: async () => ({ data: { loginShell: "/bin/zsh" } }),
+      },
+    };
+    activateProviderTerminalPlugin(host, [], {
+      pluginId: "plugin", engineId: "vt100", providerUnit: "terminal-vt100", programId: "terminal-vt100",
+    });
+    expect([...registered.keys()].sort()).toEqual([...TERMINAL_PLUGIN_COMMANDS].sort());
+    for (const command of TERMINAL_PLUGIN_COMMANDS) {
+      const actual = registered.get(command)!;
+      const contract = TERMINAL_PLUGIN_COMMAND_SCHEMAS[command];
+      const params = actual.params as Record<string, { type: string; required?: boolean }>;
+      expect(Object.keys(params).sort()).toEqual(Object.keys(contract.input.properties).sort());
+      expect(Object.entries(params).filter(([, value]) => value.required).map(([name]) => name).sort())
+        .toEqual([...contract.input.required].sort());
+      expect(actual.danger ?? "none").toBe(contract.danger);
+      const result = await (actual.handler as (params: Record<string, unknown>) => unknown)(
+        command === "wait" ? { phase: "closed" } : command === "send" ? { data: "x" } : {},
+      ) as Record<string, unknown>;
+      for (const field of contract.output.required) expect(result).toHaveProperty(field);
+    }
+  });
+
   it("detaches presentation without ending the PTY session", async () => {
     let view: { mount(container: HTMLElement, context: unknown): void; unmount?(container: HTMLElement): void } | undefined;
     const requests: string[] = [];

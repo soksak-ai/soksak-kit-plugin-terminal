@@ -1,4 +1,8 @@
-import type { TerminalPluginPublicStatus } from "@soksak/soksak-contract-plugin-terminal";
+import {
+  TERMINAL_PLUGIN_COMMAND_SCHEMAS,
+  type TerminalPluginCommand,
+  type TerminalPluginPublicStatus,
+} from "@soksak/soksak-contract-plugin-terminal";
 import { createProviderFramePresenter, type ProviderFrame } from "./provider-frame-presenter";
 import { createTerminalSessionBinding, type TerminalSessionHost } from "./terminal-session-binding";
 import { createTerminalStatusController } from "./terminal-status-publication";
@@ -70,8 +74,10 @@ export function activateProviderTerminalPlugin(
       en: `${config.engineId} terminal ${name}`,
       ko: `${config.engineId} 터미널 ${name}`,
     };
+    const schema = TERMINAL_PLUGIN_COMMAND_SCHEMAS[name as TerminalPluginCommand];
     const disposable = host.commands.register(name, {
       description, params, returns: "{}", message: () => description, handler,
+      ...(schema?.danger === "inject" ? { danger: "inject" } : {}),
     });
     if (disposable) subscriptions.push(disposable);
   };
