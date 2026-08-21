@@ -24,7 +24,7 @@ describe("provider-backed terminal plugin", () => {
       },
     };
     activateProviderTerminalPlugin(host, [], {
-      pluginId: "plugin", engineId: "vt100", providerUnit: "terminal-vt100", programId: "terminal-vt100",
+      pluginId: "plugin", engineId: "vt100", providerSidecar: "terminal-vt100", programId: "terminal-vt100",
     });
     expect([...registered.keys()].sort()).toEqual([...TERMINAL_PLUGIN_COMMANDS].sort());
     for (const command of TERMINAL_PLUGIN_COMMANDS) {
@@ -69,7 +69,7 @@ describe("provider-backed terminal plugin", () => {
       commands: { register: () => ({ dispose() {} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
     };
     activateProviderTerminalPlugin(host, [], {
-      pluginId: "plugin", engineId: "vt100", providerUnit: "terminal-vt100", programId: "terminal-vt100",
+      pluginId: "plugin", engineId: "vt100", providerSidecar: "terminal-vt100", programId: "terminal-vt100",
     });
     const root = document.createElement("div"); document.body.append(root);
     view!.mount(root, { viewId: "pane" });
@@ -109,7 +109,7 @@ describe("provider-backed terminal plugin", () => {
       commands: { register: () => ({ dispose() {} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
     };
     activateProviderTerminalPlugin(host, [], {
-      pluginId: "plugin", engineId: "vt100", providerUnit: "terminal-vt100", programId: "terminal-vt100",
+      pluginId: "plugin", engineId: "vt100", providerSidecar: "terminal-vt100", programId: "terminal-vt100",
     });
     const root = document.createElement("div"); document.body.append(root);
     view!.mount(root, { viewId: "pane" });
@@ -158,7 +158,7 @@ describe("provider-backed terminal plugin", () => {
         execute: async () => ({ data: { loginShell: "/bin/zsh" } }),
       },
     };
-    activateProviderTerminalPlugin(host, [], { pluginId: "plugin", engineId: "vt100", providerUnit: "terminal-vt100", programId: "terminal-vt100" });
+    activateProviderTerminalPlugin(host, [], { pluginId: "plugin", engineId: "vt100", providerSidecar: "terminal-vt100", programId: "terminal-vt100" });
     const root = document.createElement("div"); document.body.append(root); view!.mount(root, { viewId: "pane" });
     await vi.waitFor(() => expect(emit).toBeTypeOf("function")); emit!(new Uint8Array([79, 75]));
     await vi.waitFor(() => expect(root.querySelector('[data-node="terminal-screen"]')?.textContent).toContain("OK"));
@@ -184,7 +184,7 @@ describe("provider-backed terminal plugin", () => {
     });
     const pty = channel(), provider = channel();
     const host: ProviderTerminalPluginHost = { windowLabel: () => "w", secrets: { generate: async () => ({ created: true }) }, sidecar: { open: async (n) => n === "pty" ? pty : provider }, ui: { registerView: (_i,v) => { view=v; return { dispose(){} }; } }, commands: { register: () => ({ dispose(){} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) } };
-    activateProviderTerminalPlugin(host, [], { pluginId:"p", engineId:"e", providerUnit:"terminal-e", programId:"terminal-e" });
+    activateProviderTerminalPlugin(host, [], { pluginId:"p", engineId:"e", providerSidecar:"terminal-e", programId:"terminal-e" });
     const root=document.createElement("div"); view!.mount(root,{viewId:"pane"}); await vi.waitFor(()=>expect(emit).toBeTypeOf("function"));
     emit!(new Uint8Array([1])); emit!(new Uint8Array([2])); emit!(new Uint8Array([3])); release();
     await vi.waitFor(()=>expect(frameSequences).toEqual([1,3]));

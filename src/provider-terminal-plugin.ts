@@ -36,7 +36,7 @@ export interface ProviderTerminalPluginHost extends TerminalSessionHost {
 export interface ProviderTerminalPluginConfig {
   pluginId: string;
   engineId: string;
-  providerUnit: string;
+  providerSidecar: string;
   programId: string;
 }
 
@@ -56,8 +56,8 @@ export function activateProviderTerminalPlugin(
 ): void {
   const screens = new Map<string, MountedScreen>();
   const binding = createTerminalSessionBinding(host, {
-    ptyUnit: "pty",
-    providerUnit: config.providerUnit,
+    ptySidecar: "pty",
+    providerSidecar: config.providerSidecar,
     onOperation(operation) {
       for (const screen of screens.values()) {
         screen.presenter.root.dataset.terminalOperation = operation;
