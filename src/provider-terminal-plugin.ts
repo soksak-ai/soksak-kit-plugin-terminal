@@ -1,4 +1,5 @@
 import {
+  TERMINAL_PLUGIN_COMMANDS,
   TERMINAL_PLUGIN_COMMAND_SCHEMAS,
   type TerminalPluginCommand,
   type TerminalPluginPublicStatus,
@@ -18,7 +19,9 @@ interface ViewContext {
 }
 
 export interface ProviderTerminalPluginHost extends TerminalSessionHost {
-  events?: TerminalLayoutEvents;
+  events?: TerminalLayoutEvents & {
+    on(event: "window.gone", callback: (payload: { windowLabel?: string }) => void): { dispose(): void };
+  };
   ui: {
     registerView(id: string, provider: {
       mount(container: HTMLElement, context: ViewContext): void;
@@ -43,14 +46,48 @@ export interface ProviderTerminalPluginConfig {
   engineId: string;
   providerSidecar: string;
   programId: string;
+  renderer?: TerminalRendererAdapter;
+  extensions?: TerminalCommandExtension[];
+}
+
+export interface TerminalPresenter {
+  root: HTMLElement;
+  size(): { cols: number; rows: number };
+  fit?(): void;
+  renderFrame?(frame: ProviderFrame): void;
+  applySnapshot?(snapshot: Record<string, unknown>, archived: boolean): Promise<void> | void;
+  writeOutput?(bytes: Uint8Array): void;
+  read(lines?: number): string;
+  waitForText(contains: string, timeoutMs: number): Promise<string>;
+  focus(): boolean;
+  prepareFocusTransfer?(): void;
+  refresh?(): void;
+  dispose(): void;
+}
+
+export interface TerminalRendererAdapter {
+  delivery: "frames" | "bytes";
+  rendererId: string;
+  rendererProfile?: "web" | "native-surface";
+  create(container: HTMLElement, pane: string, send: (text: string) => void): TerminalPresenter;
+}
+
+export interface TerminalCommandExtension {
+  name: string;
+  params: Record<string, unknown>;
+  danger?: "inject";
+  handler(params: Record<string, unknown>, screen: {
+    pane: string; presenter: TerminalPresenter; writable: boolean; send(data: string): void;
+  } | undefined): unknown;
 }
 
 interface MountedScreen {
   pane: string;
-  presenter: ReturnType<typeof createProviderFramePresenter>;
+  presenter: TerminalPresenter;
   session: number;
   status: ReturnType<typeof createTerminalStatusController>;
   requestedSize: { cols: number; rows: number } | null;
+  writable: boolean;
   stop(): void;
 }
 
@@ -71,11 +108,16 @@ export function activateProviderTerminalPlugin(
       }
     },
   });
+  const windowGone = host.events?.on("window.gone", (payload?: { windowLabel?: string }) => {
+    const windowLabel = payload?.windowLabel;
+    if (typeof windowLabel === "string" && windowLabel !== "") void binding.closeWindow(windowLabel);
+  });
+  if (windowGone) subscriptions.push(windowGone);
 
   const register = (
     name: string,
     params: Record<string, unknown>,
-    handler: (params: Record<string, unknown>) => unknown,
+    handler: (params: Record<string, unknown>, context?: { pane?: string }) => unknown,
   ) => {
     const description = {
       en: `${config.engineId} terminal ${name}`,
@@ -89,8 +131,12 @@ export function activateProviderTerminalPlugin(
     if (disposable) subscriptions.push(disposable);
   };
 
-  const target = (params: Record<string, unknown>): MountedScreen | undefined => {
+  const target = (params: Record<string, unknown>, context?: { pane?: string }): MountedScreen | undefined => {
     if (typeof params.view === "string") return screens.get(params.view);
+    if (typeof context?.pane === "string") {
+      const contextual = screens.get(context.pane);
+      if (contextual) return contextual;
+    }
     if (screens.size === 1) return screens.values().next().value;
     return undefined;
   };
@@ -99,6 +145,7 @@ export function activateProviderTerminalPlugin(
     mount(container: HTMLElement, context: ViewContext) {
       const pane = context.viewId ?? "";
       if (!pane) throw new Error("terminal view requires a view id");
+      screens.get(pane)?.stop();
 
       let session = 0;
       let stopped = false;
@@ -109,19 +156,32 @@ export function activateProviderTerminalPlugin(
       let rendering = false;
       let writable = false;
       let requestedSize: { cols: number; rows: number } | null = null;
-      const terminalSize = () => ({
-        cols: Math.max(1, Math.floor(container.clientWidth / 8)),
-        rows: Math.max(1, Math.floor(container.clientHeight / 16)),
-      });
-      const presenter = createProviderFramePresenter(container, (text) => {
+      const framePresenter = config.renderer ? undefined : createProviderFramePresenter(container, (text) => {
         if (writable && session) void binding.write(session, text);
       });
+      const presenter: TerminalPresenter = config.renderer
+        ? config.renderer.create(container, pane, (text) => {
+            if (writable && session) void binding.write(session, text);
+          })
+        : {
+            ...framePresenter!,
+            renderFrame: (frame) => framePresenter!.render(frame),
+          };
+      const terminalSize = () => {
+        presenter.fit?.();
+        const measured = presenter.size();
+        if (measured.cols > 0 && measured.rows > 0) return measured;
+        return {
+          cols: Math.max(1, Math.floor(container.clientWidth / 8)),
+          rows: Math.max(1, Math.floor(container.clientHeight / 16)),
+        };
+      };
       const status = createTerminalStatusController({
         root: container,
         pluginId: config.pluginId,
         engineId: config.engineId,
-        rendererId: `${config.engineId}-frame`,
-        rendererProfile: "web",
+        rendererId: config.renderer?.rendererId ?? `${config.engineId}-frame`,
+        rendererProfile: config.renderer?.rendererProfile ?? "web",
         publish(value) {
           context.setStatus?.(value.failure ? {
             code: value.failure.code, message: value.failure.message,
@@ -131,7 +191,7 @@ export function activateProviderTerminalPlugin(
 
       const applyFrame = (value: unknown): boolean => {
         if (!value || typeof value !== "object") return false;
-        presenter.render(value as ProviderFrame);
+        presenter.renderFrame?.(value as ProviderFrame);
         return true;
       };
       const requireReply = (reply: Record<string, unknown>, operation: string) => {
@@ -149,9 +209,8 @@ export function activateProviderTerminalPlugin(
         try {
           while (!stopped && requestedSequence > renderedSequence) {
             const sequence = requestedSequence;
-            const response = await binding.providerRequest({
-              op: "frame", pane, afterSequence: sequence,
-            });
+            if (config.renderer?.delivery === "bytes") break;
+            const response = await binding.providerRequest({ op: "frame", pane, afterSequence: sequence });
             applyFrame(requireReply(response, "frame"));
             renderedSequence = sequence;
           }
@@ -164,11 +223,9 @@ export function activateProviderTerminalPlugin(
         const { cols, rows } = terminalSize();
         await binding.resize(session, cols, rows);
         requestedSize = { cols, rows };
-        const observed = requireReply(await binding.providerRequest({
-          op: "waitSize", pane, cols, rows, timeoutMs: 8000,
-        }), "waitSize");
+        const observed = requireReply(await binding.providerRequest({ op: "waitSize", pane, cols, rows, timeoutMs: 8000 }), "waitSize");
         if (stopped) return;
-        if (!applyFrame(requireReply(await binding.providerRequest({ op: "frame", pane }), "frame"))) {
+        if (config.renderer?.delivery !== "bytes" && !applyFrame(requireReply(await binding.providerRequest({ op: "frame", pane }), "frame"))) {
           throw new Error("resize frame is invalid");
         }
         container.dispatchEvent(new CustomEvent("soksak:terminal-size", { detail: observed }));
@@ -183,7 +240,8 @@ export function activateProviderTerminalPlugin(
       const requestResize = () => resizeWorker.request();
       const attach = (opened: number) => {
         session = opened;
-        output = binding.onData(session, (_bytes, throughSeq) => {
+        output = binding.onData(session, (bytes, throughSeq) => {
+          if (config.renderer?.delivery === "bytes") { presenter.writeOutput?.(bytes); return; }
           requestedSequence = Math.max(requestedSequence, throughSeq);
           void renderLatest();
         });
@@ -223,9 +281,12 @@ export function activateProviderTerminalPlugin(
         }), "rehydrate");
         const leaseToken = typeof restored.leaseToken === "string"
           ? restored.leaseToken : "";
-        if (!leaseToken || !applyFrame(restored.frame)) {
+        if (!leaseToken || (config.renderer?.delivery === "bytes"
+          ? !presenter.applySnapshot
+          : !applyFrame(restored.frame))) {
           throw new Error("rehydrate returned no frame or snapshot lease");
         }
+        if (config.renderer?.delivery === "bytes") await presenter.applySnapshot!(restored, false);
         status.set("applying-snapshot", {
           recoveryOutcome: "continued", fidelity: "complete",
         });
@@ -244,7 +305,10 @@ export function activateProviderTerminalPlugin(
           requireReply(archived, "archived");
         }
         const data = requireReply(archived, "archived");
-        if (!applyFrame(data.frame)) throw new Error("archived returned no frame");
+        if (config.renderer?.delivery === "bytes") {
+          if (!presenter.applySnapshot) throw new Error("byte presenter cannot restore snapshots");
+          await presenter.applySnapshot(data, true);
+        } else if (!applyFrame(data.frame)) throw new Error("archived returned no frame");
         writable = false;
         container.dataset.terminalOperation = "ready";
         status.set("archived", {
@@ -260,6 +324,8 @@ export function activateProviderTerminalPlugin(
       };
 
       const resize = observeTerminalLayout({ element: container, resized: requestResize, events: host.events });
+      const capturePrepare = () => presenter.refresh?.();
+      window.addEventListener("soksak:capture-prepare", capturePrepare);
       void start().catch((error) => status.set("blocked", {
         failure: { code: "START_FAILED", message: String(error) },
         fidelity: "unavailable", recoveryOutcome: "blocked",
@@ -271,10 +337,12 @@ export function activateProviderTerminalPlugin(
         get session() { return session; },
         status,
         get requestedSize() { return requestedSize; },
+        get writable() { return writable; },
         stop() {
           stopped = true;
           writable = false;
           resize.dispose();
+          window.removeEventListener("soksak:capture-prepare", capturePrepare);
           output?.dispose();
           io?.dispose();
           if (session) binding.detach(session);
@@ -290,6 +358,10 @@ export function activateProviderTerminalPlugin(
       found[1].stop();
       screens.delete(found[0]);
     },
+    prepareFocusTransfer(container: HTMLElement) {
+      const found = [...screens.values()].find((screen) => screen.presenter.root === container);
+      found?.presenter.prepareFocusTransfer?.();
+    },
     focus(container: HTMLElement, _context: ViewContext, request: { signal: AbortSignal }) {
       if (request.signal.aborted) return;
       const found = [...screens.values()].find((screen) => screen.presenter.root === container);
@@ -300,13 +372,14 @@ export function activateProviderTerminalPlugin(
 
   const closedStatus = (): TerminalPluginPublicStatus => ({
       pluginId: config.pluginId, engineId: config.engineId,
-      rendererId: `${config.engineId}-frame`, rendererProfile: "web",
+      rendererId: config.renderer?.rendererId ?? `${config.engineId}-frame`,
+      rendererProfile: config.renderer?.rendererProfile ?? "web",
       phase: "closed", recoveryOutcome: "blocked", fidelity: "unavailable",
       failure: null, hostPixels: { width: 0, height: 0 }, requested: null, pty: null,
       recovery: null, rendered: null, operation: "closed",
   });
-  register("status", { view: viewParam }, async (params) => {
-    const screen = target(params);
+  register("status", { view: viewParam }, async (params, context) => {
+    const screen = target(params, context);
     if (!screen) return closedStatus();
     const rendered = screen.presenter.size();
     return {
@@ -320,10 +393,10 @@ export function activateProviderTerminalPlugin(
       }),
     };
   });
-  register("archive", { view: viewParam }, async (params) => {
-    const screen = target(params);
+  register("archive", { view: viewParam }, async (params, context) => {
+    const screen = target(params, context);
     if (!screen) return { archived: false };
-    const response = await binding.providerRequest({ op: "archive", pane: String(params.view) });
+    const response = await binding.providerRequest({ op: "archive", pane: screen.pane });
     return response.ok === true ? { archived: true, ...(response.data as object) } : response;
   });
   register("wait", {
@@ -338,8 +411,8 @@ export function activateProviderTerminalPlugin(
     colsLessThan: { type: "number", description: { en: "Terminal columns below this value", ko: "이 값보다 작은 터미널 열 수" } },
     rows: { type: "number", description: { en: "Exact terminal rows", ko: "정확한 터미널 행 수" } },
     view: viewParam,
-  }, async (params) => {
-    const screen = target(params);
+  }, async (params, context) => {
+    const screen = target(params, context);
     if (!screen) return closedStatus();
     const phase = String(params.phase) as TerminalPluginPublicStatus["phase"];
     const timeoutMs = typeof params.timeoutMs === "number" ? params.timeoutMs : 10000;
@@ -365,33 +438,33 @@ export function activateProviderTerminalPlugin(
   register("read", {
     lines: { type: "number", description: { en: "Trailing line count", ko: "마지막 줄 수" } },
     view: viewParam,
-  }, (params) => ({
-    text: target(params)?.presenter.read(
+  }, (params, context) => ({
+    text: target(params, context)?.presenter.read(
       typeof params.lines === "number" ? params.lines : undefined,
     ) ?? "",
   }));
   register("send", {
     data: { type: "string", required: true, description: { en: "Input data", ko: "입력 데이터" } },
     view: viewParam,
-  }, (params) => {
-    const screen = target(params);
-    if (!screen || screen.status.current().phase === "archived" || typeof params.data !== "string") {
+  }, (params, context) => {
+    const screen = target(params, context);
+    if (!screen?.writable || typeof params.data !== "string") {
       return { sent: false };
     }
     void binding.write(screen.session, params.data);
     return { sent: params.data.length };
   });
-  register("clear", { view: viewParam }, (params) => {
-    const screen = target(params);
-    if (!screen || screen.status.current().phase === "archived") return { cleared: false };
+  register("clear", { view: viewParam }, (params, context) => {
+    const screen = target(params, context);
+    if (!screen?.writable) return { cleared: false };
     void binding.write(screen.session, "\x0c");
     return { cleared: true };
   });
-  register("focus", { view: viewParam }, (params) => ({
-    focused: target(params)?.presenter.focus() ?? false,
+  register("focus", { view: viewParam }, (params, context) => ({
+    focused: target(params, context)?.presenter.focus() ?? false,
   }));
-  register("recovery-status", { view: viewParam }, async (params) => {
-    const screen = target(params);
+  register("recovery-status", { view: viewParam }, async (params, context) => {
+    const screen = target(params, context);
     if (!screen) return closedStatus();
     const rendered = screen.presenter.size();
     return {
@@ -405,4 +478,17 @@ export function activateProviderTerminalPlugin(
       }),
     };
   });
+  for (const extension of config.extensions ?? []) {
+    if ((TERMINAL_PLUGIN_COMMANDS as readonly string[]).includes(extension.name)) {
+      throw new Error(`terminal extension cannot replace standard command ${extension.name}`);
+    }
+    register(extension.name, extension.params, (params, context) => {
+      const screen = target(params, context);
+      return extension.handler(params, screen ? {
+        pane: screen.pane, presenter: screen.presenter,
+        writable: screen.writable,
+        send: (data) => { void binding.write(screen.session, data); },
+      } : undefined);
+    });
+  }
 }
