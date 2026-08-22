@@ -8,6 +8,54 @@ import {
 globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as typeof ResizeObserver;
 
 describe("provider-backed terminal plugin", () => {
+  it("resizes from the host post-commit reflow event", async () => {
+    let view: { mount(container: HTMLElement, context: unknown): void } | undefined;
+    let reflow: (() => void) | undefined;
+    const resizeRequests: Array<Record<string, unknown>> = [];
+    let width = 800;
+    const pty = {
+      send: vi.fn(async (request: Record<string, unknown>) => {
+        const payload = (request.args as { request: Record<string, unknown> }).request;
+        if (request.command === "pty.resize") resizeRequests.push(payload);
+        const data = request.command === "pty.open" ? { session: 7 }
+          : request.command === "pty.pane" ? { held: false } : {};
+        return { ok: true, result: { data } };
+      }),
+      stream: vi.fn(async () => ({
+        answer: { ok: true, result: { data: { startSeq: 0 } } }, close: { dispose() {} },
+      })),
+    };
+    const provider = {
+      send: vi.fn(async (request: Record<string, unknown>) => {
+        if (request.command === "terminal.archived") return { ok: false, error: "missing", result: { code: "NOT_FOUND" } };
+        const payload = (request.args as { request: Record<string, unknown> }).request;
+        const data = request.command === "terminal.prepareSession" ? { observerToken: "observer" }
+          : request.command === "terminal.waitSize" ? { cols: payload.cols, rows: payload.rows }
+          : request.command === "terminal.frame" ? { cols: Number(payload.cols ?? 54), rows: 24, cursor: [0,0], alt_active: false, lines: [[]] } : {};
+        return { ok: true, result: { data } };
+      }),
+      stream: vi.fn(),
+    };
+    const host: ProviderTerminalPluginHost = {
+      windowLabel: () => "window", secrets: { generate: async () => ({ created: true }) },
+      sidecar: { open: async (name) => name === "pty" ? pty : provider },
+      events: { on: (_event, callback) => { reflow = callback; return { dispose() {} }; } },
+      ui: { registerView: (_id, item) => { view = item; return { dispose() {} }; } },
+      commands: { register: () => ({ dispose() {} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
+    };
+    activateProviderTerminalPlugin(host, [], { pluginId: "plugin", engineId: "vt100", providerSidecar: "terminal-vt100", programId: "terminal-vt100" });
+    const root = document.createElement("div");
+    Object.defineProperty(root, "clientWidth", { get: () => width });
+    Object.defineProperty(root, "clientHeight", { value: 384 });
+    document.body.append(root);
+    view!.mount(root, { viewId: "pane" });
+    await vi.waitFor(() => expect(resizeRequests.length).toBeGreaterThan(0));
+    resizeRequests.length = 0;
+    width = 432;
+    reflow!();
+    await vi.waitFor(() => expect(resizeRequests).toContainEqual(expect.objectContaining({ cols: 54, rows: 24 })));
+  });
+
   it("registers the common command contract exactly", async () => {
     const registered = new Map<string, Record<string, unknown>>();
     const host: ProviderTerminalPluginHost = {

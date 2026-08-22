@@ -7,6 +7,8 @@ The kit connects declared PTY and terminal-state sidecars, publishes the common 
 waits through lifecycle events without polling, and presents provider frames. Terminal plugins own
 their manifests, engine identity, commands and UI integration.
 Status reports host pixels, requested size, PTY observation, recovery observation and rendered size.
+Layout updates consume both `ResizeObserver` and the host's post-commit `layout.reflow` event. Both
+signals enter the same serial resize worker; no interval or retry path exists.
 
 ## Verification
 

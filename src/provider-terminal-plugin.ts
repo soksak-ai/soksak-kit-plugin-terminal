@@ -10,6 +10,7 @@ import { waitForTerminalConditions } from "./terminal-condition-wait";
 import { waitForTerminalSize } from "./terminal-size-wait";
 import { createTerminalResizeWorker } from "./terminal-resize-worker";
 import { terminalResizeStatus } from "./terminal-resize-status";
+import { observeTerminalLayout, type TerminalLayoutEvents } from "./terminal-layout-observer";
 
 interface ViewContext {
   viewId?: string | null;
@@ -17,6 +18,7 @@ interface ViewContext {
 }
 
 export interface ProviderTerminalPluginHost extends TerminalSessionHost {
+  events?: TerminalLayoutEvents;
   ui: {
     registerView(id: string, provider: {
       mount(container: HTMLElement, context: ViewContext): void;
@@ -257,8 +259,7 @@ export function activateProviderTerminalPlugin(
         else if (!await startArchived()) await startFresh();
       };
 
-      const resize = new ResizeObserver(requestResize);
-      resize.observe(container);
+      const resize = observeTerminalLayout({ element: container, resized: requestResize, events: host.events });
       void start().catch((error) => status.set("blocked", {
         failure: { code: "START_FAILED", message: String(error) },
         fidelity: "unavailable", recoveryOutcome: "blocked",
@@ -273,7 +274,7 @@ export function activateProviderTerminalPlugin(
         stop() {
           stopped = true;
           writable = false;
-          resize.disconnect();
+          resize.dispose();
           output?.dispose();
           io?.dispose();
           if (session) binding.detach(session);
