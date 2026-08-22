@@ -189,4 +189,5 @@ describe("provider-backed terminal plugin", () => {
     emit!(new Uint8Array([1])); emit!(new Uint8Array([2])); emit!(new Uint8Array([3])); release();
     await vi.waitFor(()=>expect(frameSequences).toEqual([1,3]));
   });
+
 });

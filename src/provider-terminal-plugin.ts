@@ -8,6 +8,7 @@ import { createTerminalSessionBinding, type TerminalSessionHost } from "./termin
 import { createTerminalStatusController } from "./terminal-status-publication";
 import { waitForTerminalConditions } from "./terminal-condition-wait";
 import { waitForTerminalSize } from "./terminal-size-wait";
+import { resizeRequestIsCurrent } from "./terminal-resize-sequence";
 
 interface ViewContext {
   viewId?: string | null;
@@ -161,11 +162,21 @@ export function activateProviderTerminalPlugin(
         const observed = requireReply(await binding.providerRequest({
           op: "waitSize", pane, cols, rows, timeoutMs: 8000,
         }), "waitSize");
-        if (sequence !== resizeSequence || stopped) return;
+        if (!resizeRequestIsCurrent(sequence, resizeSequence, stopped)) return;
         if (!applyFrame(requireReply(await binding.providerRequest({ op: "frame", pane }), "frame"))) {
           throw new Error("resize frame is invalid");
         }
         container.dispatchEvent(new CustomEvent("soksak:terminal-size", { detail: observed }));
+      };
+      const reportResizeFailure = (error: unknown, sequence: number) => {
+        if (!resizeRequestIsCurrent(sequence, resizeSequence, stopped)) return;
+        status.set("blocked", {
+          failure: { code: "RESIZE_FAILED", message: String(error) }, fidelity: "unavailable",
+        });
+      };
+      const requestResize = () => {
+        const nextSequence = resizeSequence + 1;
+        void resizeSession().catch((error) => reportResizeFailure(error, nextSequence));
       };
       const attach = (opened: number) => {
         session = opened;
@@ -178,9 +189,7 @@ export function activateProviderTerminalPlugin(
           readBuffer: (lines) => presenter.read(lines),
           sendInput: (data) => { if (writable && session) void binding.write(session, data); },
         });
-        void resizeSession().catch((error) => status.set("blocked", {
-          failure: { code: "RESIZE_FAILED", message: String(error) }, fidelity: "unavailable",
-        }));
+        requestResize();
       };
       const startFresh = async () => {
         container.dataset.terminalOperation = "preparing-observer";
@@ -245,11 +254,7 @@ export function activateProviderTerminalPlugin(
         else if (!await startArchived()) await startFresh();
       };
 
-      const resize = new ResizeObserver(() => {
-        void resizeSession().catch((error) => status.set("blocked", {
-          failure: { code: "RESIZE_FAILED", message: String(error) }, fidelity: "unavailable",
-        }));
-      });
+      const resize = new ResizeObserver(requestResize);
       resize.observe(container);
       void start().catch((error) => status.set("blocked", {
         failure: { code: "START_FAILED", message: String(error) },
