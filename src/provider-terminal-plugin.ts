@@ -19,6 +19,7 @@ interface ViewContext {
 }
 
 export interface ProviderTerminalPluginHost extends TerminalSessionHost {
+  locale?(): string;
   events?: TerminalLayoutEvents & {
     on(event: "window.gone", callback: (payload: { windowLabel?: string }) => void): { dispose(): void };
   };
@@ -27,6 +28,9 @@ export interface ProviderTerminalPluginHost extends TerminalSessionHost {
       mount(container: HTMLElement, context: ViewContext): void;
       unmount?(container: HTMLElement): void;
       focus?(container: HTMLElement, context: ViewContext, request: { signal: AbortSignal }): void;
+    }): { dispose(): void };
+    statusBarItem?(item: {
+      id: string; paneId: string; label: string; title?: string; side?: "left" | "right";
     }): { dispose(): void };
   };
   commands: {
@@ -38,6 +42,8 @@ export interface ProviderTerminalPluginHost extends TerminalSessionHost {
       readBuffer(lines?: number): string;
       sendInput(data: string): void;
     }): { dispose(): void };
+    getCwd?(pane: string): string | undefined;
+    onCwd?(pane: string, callback: (cwd: string) => void): { dispose(): void };
   };
 }
 
@@ -48,6 +54,7 @@ export interface ProviderTerminalPluginConfig {
   programId: string;
   renderer?: TerminalRendererAdapter;
   extensions?: TerminalCommandExtension[];
+  label?: { en: string; ko: string };
 }
 
 export interface TerminalPresenter {
@@ -118,6 +125,7 @@ export function activateProviderTerminalPlugin(
     name: string,
     params: Record<string, unknown>,
     handler: (params: Record<string, unknown>, context?: { pane?: string }) => unknown,
+    danger?: "inject",
   ) => {
     const description = {
       en: `${config.engineId} terminal ${name}`,
@@ -126,7 +134,7 @@ export function activateProviderTerminalPlugin(
     const schema = TERMINAL_PLUGIN_COMMAND_SCHEMAS[name as TerminalPluginCommand];
     const disposable = host.commands.register(name, {
       description, params, returns: "{}", message: () => description, handler,
-      ...(schema?.danger === "inject" ? { danger: "inject" } : {}),
+      ...(schema?.danger === "inject" || danger === "inject" ? { danger: "inject" } : {}),
     });
     if (disposable) subscriptions.push(disposable);
   };
@@ -331,6 +339,7 @@ export function activateProviderTerminalPlugin(
         fidelity: "unavailable", recoveryOutcome: "blocked",
       }));
 
+      const viewDisposables: { dispose(): void }[] = [];
       const entry: MountedScreen = {
         pane,
         presenter,
@@ -345,12 +354,31 @@ export function activateProviderTerminalPlugin(
           window.removeEventListener("soksak:capture-prepare", capturePrepare);
           output?.dispose();
           io?.dispose();
+          viewDisposables.splice(0).forEach((item) => item.dispose());
           if (session) binding.detach(session);
           status.close();
           presenter.dispose();
         },
       };
       screens.set(pane, entry);
+      if (host.ui.statusBarItem) {
+        const locale = host.locale?.() ?? "en";
+        const label = locale.startsWith("ko") ? config.label?.ko : config.label?.en;
+        let cwdItem: { dispose(): void } | undefined;
+        const placeCwd = (cwd?: string) => {
+          cwdItem?.dispose();
+          const item = host.ui.statusBarItem?.({ id: `cwd:${pane}`, paneId: pane, label: cwd ?? "~", title: cwd, side: "left" });
+          cwdItem = item;
+        };
+        placeCwd(host.terminal?.getCwd?.(pane));
+        const cwd = host.terminal?.onCwd?.(pane, placeCwd);
+        if (cwd) viewDisposables.push(cwd);
+        viewDisposables.push({ dispose: () => cwdItem?.dispose() });
+        if (label) {
+          const kind = host.ui.statusBarItem({ id: `kind:${pane}`, paneId: pane, label });
+          viewDisposables.push(kind);
+        }
+      }
     },
     unmount(container: HTMLElement) {
       const found = [...screens.entries()].find(([, value]) => value.presenter.root === container);
@@ -489,6 +517,6 @@ export function activateProviderTerminalPlugin(
         writable: screen.writable,
         send: (data) => { void binding.write(screen.session, data); },
       } : undefined);
-    });
+    }, extension.danger);
   }
 }

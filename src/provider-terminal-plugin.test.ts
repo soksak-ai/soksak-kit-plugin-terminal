@@ -77,6 +77,41 @@ describe("provider-backed terminal plugin", () => {
     })).toThrow("terminal extension cannot replace standard command status");
   });
 
+  it("publishes and disposes shell status through the common view lifecycle", () => {
+    let view: { mount(container: HTMLElement, context: unknown): void; unmount?(container: HTMLElement): void } | undefined;
+    const disposed: string[] = [];
+    const items: Array<{ id: string; label: string }> = [];
+    let cwdChanged: ((cwd: string) => void) | undefined;
+    const host = {
+      windowLabel: () => "window", locale: () => "en", sidecar: { open: vi.fn() },
+      ui: {
+        registerView: (_id: string, provider: typeof view) => { view = provider; return { dispose() {} }; },
+        statusBarItem: (item: { id: string; label: string }) => {
+          items.push(item); return { dispose: () => { disposed.push(item.id); } };
+        },
+      },
+      terminal: {
+        getCwd: () => "/one",
+        onCwd: (_pane: string, callback: (cwd: string) => void) => { cwdChanged = callback; return { dispose: () => disposed.push("watch") }; },
+      },
+      commands: { register: () => ({ dispose() {} }) },
+    } as unknown as ProviderTerminalPluginHost;
+    activateProviderTerminalPlugin(host, [], {
+      pluginId: "plugin", engineId: "frame", providerSidecar: "terminal-frame",
+      programId: "terminal-frame", label: { en: "Terminal", ko: "터미널" },
+    });
+    const root = document.createElement("div"); document.body.append(root);
+    view!.mount(root, { viewId: "pane" });
+    expect(items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "cwd:pane", label: "/one" }),
+      expect.objectContaining({ id: "kind:pane", label: "Terminal" }),
+    ]));
+    cwdChanged!("/two");
+    expect(items.at(-1)).toMatchObject({ id: "cwd:pane", label: "/two" });
+    view!.unmount?.(root);
+    expect(disposed).toEqual(expect.arrayContaining(["cwd:pane", "kind:pane", "watch"]));
+  });
+
   it("hands warm byte snapshots to the presenter before attaching the lease", async () => {
     let view: { mount(container: HTMLElement, context: unknown): void } | undefined;
     const snapshots: Record<string, unknown>[] = [];
@@ -148,7 +183,10 @@ describe("provider-backed terminal plugin", () => {
     const host: ProviderTerminalPluginHost = {
       windowLabel: () => "window", secrets: { generate: async () => ({ created: true }) },
       sidecar: { open: async (name) => name === "pty" ? pty : provider },
-      events: { on: (_event, callback) => { reflow = callback; return { dispose() {} }; } },
+      events: { on: (event: "layout.reflow" | "window.gone", callback: (() => void) | ((payload: { windowLabel?: string }) => void)) => {
+        if (event === "layout.reflow") reflow = callback as () => void;
+        return { dispose() {} };
+      } },
       ui: { registerView: (_id, item) => { view = item; return { dispose() {} }; } },
       commands: { register: () => ({ dispose() {} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
     };
