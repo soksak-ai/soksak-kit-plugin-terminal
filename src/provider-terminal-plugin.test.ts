@@ -163,6 +163,13 @@ describe("provider-backed terminal plugin", () => {
     await vi.waitFor(() => expect(emit).toBeTypeOf("function")); emit!(new Uint8Array([79, 75]));
     await vi.waitFor(() => expect(root.querySelector('[data-node="terminal-screen"]')?.textContent).toContain("OK"));
     expect(provider.send).toHaveBeenCalledWith(expect.objectContaining({ args: { request: expect.objectContaining({ afterSequence: 12 }) } }));
+    const status = await commands.get("status")!({}) as Record<string, unknown>;
+    expect(status).toMatchObject({
+      hostPixels: { width: 0, height: 0 }, requested: { cols: 80, rows: 24 },
+      pty: null, recovery: null, rendered: { cols: 4, rows: 1 }, operation: "ready",
+    });
+    expect(status).not.toHaveProperty("source");
+    expect(status).not.toHaveProperty("cols");
     await commands.get("send")!({ view: "pane", data: "x" });
     expect(writes).toContainEqual(expect.objectContaining({ command: "pty.write" }));
   });

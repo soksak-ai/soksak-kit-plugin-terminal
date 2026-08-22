@@ -30,6 +30,8 @@ export function createTerminalStatusController(
     phase: "initializing", pluginId: options.pluginId, engineId: options.engineId,
     rendererId: options.rendererId, rendererProfile: options.rendererProfile,
     recoveryOutcome: "fresh", fidelity: "unavailable", failure: null,
+    hostPixels: { width: 0, height: 0 }, requested: null, pty: null, recovery: null,
+    rendered: null, operation: "initializing",
   };
   const listeners = new Set<(status: TerminalPluginPublicStatus) => void>();
   const publish = (): TerminalPluginPublicStatus => {

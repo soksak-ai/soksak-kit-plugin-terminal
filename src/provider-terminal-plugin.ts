@@ -9,6 +9,7 @@ import { createTerminalStatusController } from "./terminal-status-publication";
 import { waitForTerminalConditions } from "./terminal-condition-wait";
 import { waitForTerminalSize } from "./terminal-size-wait";
 import { createTerminalResizeWorker } from "./terminal-resize-worker";
+import { terminalResizeStatus } from "./terminal-resize-status";
 
 interface ViewContext {
   viewId?: string | null;
@@ -43,9 +44,11 @@ export interface ProviderTerminalPluginConfig {
 }
 
 interface MountedScreen {
+  pane: string;
   presenter: ReturnType<typeof createProviderFramePresenter>;
   session: number;
   status: ReturnType<typeof createTerminalStatusController>;
+  requestedSize: { cols: number; rows: number } | null;
   stop(): void;
 }
 
@@ -103,6 +106,7 @@ export function activateProviderTerminalPlugin(
       let renderedSequence = 0;
       let rendering = false;
       let writable = false;
+      let requestedSize: { cols: number; rows: number } | null = null;
       const terminalSize = () => ({
         cols: Math.max(1, Math.floor(container.clientWidth / 8)),
         rows: Math.max(1, Math.floor(container.clientHeight / 16)),
@@ -157,6 +161,7 @@ export function activateProviderTerminalPlugin(
         if (!session || container.clientWidth <= 0 || container.clientHeight <= 0) return;
         const { cols, rows } = terminalSize();
         await binding.resize(session, cols, rows);
+        requestedSize = { cols, rows };
         const observed = requireReply(await binding.providerRequest({
           op: "waitSize", pane, cols, rows, timeoutMs: 8000,
         }), "waitSize");
@@ -197,6 +202,7 @@ export function activateProviderTerminalPlugin(
         if (!token) throw new Error("prepareSession returned no observer token");
         container.dataset.terminalOperation = "opening-pty";
         const opened = await binding.open(pane, 80, 24, "none", token);
+        requestedSize = { cols: 80, rows: 24 };
         container.dataset.terminalOperation = "subscribing-provider";
         requireReply(await binding.providerRequest({
           op: "ensureSession", pane, cols: 80, rows: 24, observerToken: token,
@@ -223,6 +229,7 @@ export function activateProviderTerminalPlugin(
         });
         container.dataset.terminalOperation = "attaching-snapshot-lease";
         const opened = await binding.open(pane, 80, 24, { leaseToken });
+        requestedSize = { cols: 80, rows: 24 };
         attach(opened);
         container.dataset.terminalOperation = "ready";
         status.set("live", { recoveryOutcome: "continued", fidelity: "complete" });
@@ -258,9 +265,11 @@ export function activateProviderTerminalPlugin(
       }));
 
       const entry: MountedScreen = {
+        pane,
         presenter,
         get session() { return session; },
         status,
+        get requestedSize() { return requestedSize; },
         stop() {
           stopped = true;
           writable = false;
@@ -288,21 +297,28 @@ export function activateProviderTerminalPlugin(
   };
   subscriptions.push(host.ui.registerView("content", view));
 
-  const publicStatus = (screen: MountedScreen | undefined): TerminalPluginPublicStatus & {
-    operation?: string; cols?: number; rows?: number;
-  } =>
-    screen ? {
-      ...screen.status.current(), ...screen.presenter.size(),
-      operation: screen.presenter.root.dataset.terminalOperation ?? "unknown",
-    } : {
+  const closedStatus = (): TerminalPluginPublicStatus => ({
       pluginId: config.pluginId, engineId: config.engineId,
       rendererId: `${config.engineId}-frame`, rendererProfile: "web",
       phase: "closed", recoveryOutcome: "blocked", fidelity: "unavailable",
-      failure: null,
+      failure: null, hostPixels: { width: 0, height: 0 }, requested: null, pty: null,
+      recovery: null, rendered: null, operation: "closed",
+  });
+  register("status", { view: viewParam }, async (params) => {
+    const screen = target(params);
+    if (!screen) return closedStatus();
+    const rendered = screen.presenter.size();
+    return {
+      ...screen.status.current(),
+      ...terminalResizeStatus({
+        pane: screen.pane, session: screen.session,
+        hostPixels: { width: screen.presenter.root.clientWidth, height: screen.presenter.root.clientHeight },
+        requested: screen.requestedSize, rendered: rendered.cols > 0 && rendered.rows > 0 ? rendered : null,
+        operation: screen.presenter.root.dataset.terminalOperation ?? "unknown",
+        diagnostics: await binding.diagnostics(),
+      }),
     };
-  register("status", { view: viewParam }, async (params) => ({
-    ...publicStatus(target(params)), source: await binding.diagnostics(),
-  }));
+  });
   register("archive", { view: viewParam }, async (params) => {
     const screen = target(params);
     if (!screen) return { archived: false };
@@ -323,7 +339,7 @@ export function activateProviderTerminalPlugin(
     view: viewParam,
   }, async (params) => {
     const screen = target(params);
-    if (!screen) return publicStatus(undefined);
+    if (!screen) return closedStatus();
     const phase = String(params.phase) as TerminalPluginPublicStatus["phase"];
     const timeoutMs = typeof params.timeoutMs === "number" ? params.timeoutMs : 10000;
     const waited = await waitForTerminalConditions({
@@ -373,5 +389,19 @@ export function activateProviderTerminalPlugin(
   register("focus", { view: viewParam }, (params) => ({
     focused: target(params)?.presenter.focus() ?? false,
   }));
-  register("recovery-status", { view: viewParam }, (params) => publicStatus(target(params)));
+  register("recovery-status", { view: viewParam }, async (params) => {
+    const screen = target(params);
+    if (!screen) return closedStatus();
+    const rendered = screen.presenter.size();
+    return {
+      ...screen.status.current(),
+      ...terminalResizeStatus({
+        pane: screen.pane, session: screen.session,
+        hostPixels: { width: screen.presenter.root.clientWidth, height: screen.presenter.root.clientHeight },
+        requested: screen.requestedSize, rendered: rendered.cols > 0 && rendered.rows > 0 ? rendered : null,
+        operation: screen.presenter.root.dataset.terminalOperation ?? "unknown",
+        diagnostics: await binding.diagnostics(),
+      }),
+    };
+  });
 }

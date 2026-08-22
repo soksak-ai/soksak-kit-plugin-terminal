@@ -20,6 +20,10 @@ describe("terminal status publication", () => {
       terminalPhase: "live", terminalRecovery: "continued", terminalFidelity: "complete",
     });
     expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ phase: "live" }));
+    expect(controller.current()).toMatchObject({
+      hostPixels: { width: 0, height: 0 }, requested: null, pty: null, recovery: null,
+      rendered: null, operation: "initializing",
+    });
     expect(events).toEqual(["initializing", "preparing-recovery", "live"]);
   });
 
