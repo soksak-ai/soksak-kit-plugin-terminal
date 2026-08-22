@@ -336,7 +336,9 @@ export function activateProviderTerminalPlugin(
         ...(typeof params.colsLessThan === "number" ? { colsLessThan: params.colsLessThan } : {}),
         ...(typeof params.rows === "number" ? { rows: params.rows } : {}),
       },
-      waitForSize: (condition, limit) => waitForTerminalSize(screen.presenter.root, condition, limit),
+      waitForSize: (condition, limit) => waitForTerminalSize(
+        screen.presenter.root, condition, limit, screen.presenter.size,
+      ),
     });
     return {
       ...waited, ...screen.presenter.size(),

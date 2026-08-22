@@ -8,11 +8,14 @@ export function waitForTerminalSize(
   root: HTMLElement,
   condition: TerminalSizeCondition,
   timeoutMs: number,
+  current: () => { cols: number; rows: number },
 ): Promise<{ cols: number; rows: number }> {
   const matches = (size: { cols: number; rows: number }) =>
     (condition.cols === undefined || size.cols === condition.cols)
     && (condition.colsLessThan === undefined || size.cols < condition.colsLessThan)
     && (condition.rows === undefined || size.rows === condition.rows);
+  const initial = current();
+  if (matches(initial)) return Promise.resolve(initial);
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       root.removeEventListener("soksak:terminal-size", onSize);
