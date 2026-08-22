@@ -8,7 +8,7 @@ import { createTerminalSessionBinding, type TerminalSessionHost } from "./termin
 import { createTerminalStatusController } from "./terminal-status-publication";
 import { waitForTerminalConditions } from "./terminal-condition-wait";
 import { waitForTerminalSize } from "./terminal-size-wait";
-import { resizeRequestIsCurrent } from "./terminal-resize-sequence";
+import { createTerminalResizeWorker } from "./terminal-resize-worker";
 
 interface ViewContext {
   viewId?: string | null;
@@ -103,7 +103,6 @@ export function activateProviderTerminalPlugin(
       let renderedSequence = 0;
       let rendering = false;
       let writable = false;
-      let resizeSequence = 0;
       const terminalSize = () => ({
         cols: Math.max(1, Math.floor(container.clientWidth / 8)),
         rows: Math.max(1, Math.floor(container.clientHeight / 16)),
@@ -157,27 +156,24 @@ export function activateProviderTerminalPlugin(
       const resizeSession = async () => {
         if (!session || container.clientWidth <= 0 || container.clientHeight <= 0) return;
         const { cols, rows } = terminalSize();
-        const sequence = ++resizeSequence;
         await binding.resize(session, cols, rows);
         const observed = requireReply(await binding.providerRequest({
           op: "waitSize", pane, cols, rows, timeoutMs: 8000,
         }), "waitSize");
-        if (!resizeRequestIsCurrent(sequence, resizeSequence, stopped)) return;
+        if (stopped) return;
         if (!applyFrame(requireReply(await binding.providerRequest({ op: "frame", pane }), "frame"))) {
           throw new Error("resize frame is invalid");
         }
         container.dispatchEvent(new CustomEvent("soksak:terminal-size", { detail: observed }));
       };
-      const reportResizeFailure = (error: unknown, sequence: number) => {
-        if (!resizeRequestIsCurrent(sequence, resizeSequence, stopped)) return;
+      const reportResizeFailure = (error: unknown) => {
+        if (stopped) return;
         status.set("blocked", {
           failure: { code: "RESIZE_FAILED", message: String(error) }, fidelity: "unavailable",
         });
       };
-      const requestResize = () => {
-        const nextSequence = resizeSequence + 1;
-        void resizeSession().catch((error) => reportResizeFailure(error, nextSequence));
-      };
+      const resizeWorker = createTerminalResizeWorker(resizeSession, reportResizeFailure);
+      const requestResize = () => resizeWorker.request();
       const attach = (opened: number) => {
         session = opened;
         output = binding.onData(session, (_bytes, throughSeq) => {
