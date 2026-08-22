@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@soksak/soksak-contract-plugin-terminal':
-        specifier: file:../../soksak-contracts/soksak-contract-plugin-terminal
-        version: file:../../soksak-contracts/soksak-contract-plugin-terminal
+        specifier: github:soksak-ai/soksak-contract-plugin-terminal#29226a04c3e06da27e9a8cca7b718561c95f3ae4
+        version: https://codeload.github.com/soksak-ai/soksak-contract-plugin-terminal/tar.gz/29226a04c3e06da27e9a8cca7b718561c95f3ae4
     devDependencies:
       jsdom:
         specifier: 30.0.1
@@ -385,8 +385,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@soksak/soksak-contract-plugin-terminal@file:../../soksak-contracts/soksak-contract-plugin-terminal':
-    resolution: {directory: ../../soksak-contracts/soksak-contract-plugin-terminal, type: directory}
+  '@soksak/soksak-contract-plugin-terminal@https://codeload.github.com/soksak-ai/soksak-contract-plugin-terminal/tar.gz/29226a04c3e06da27e9a8cca7b718561c95f3ae4':
+    resolution: {tarball: https://codeload.github.com/soksak-ai/soksak-contract-plugin-terminal/tar.gz/29226a04c3e06da27e9a8cca7b718561c95f3ae4}
+    version: 0.0.1
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
@@ -958,7 +959,7 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.62.4':
     optional: true
 
-  '@soksak/soksak-contract-plugin-terminal@file:../../soksak-contracts/soksak-contract-plugin-terminal': {}
+  '@soksak/soksak-contract-plugin-terminal@https://codeload.github.com/soksak-ai/soksak-contract-plugin-terminal/tar.gz/29226a04c3e06da27e9a8cca7b718561c95f3ae4': {}
 
   '@types/chai@5.2.3':
     dependencies:

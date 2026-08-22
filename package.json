@@ -11,7 +11,7 @@
   "exports": { ".": "./src/index.ts" },
   "scripts": { "test": "node --test scripts/*.node.mjs && vitest run", "typecheck": "tsc --noEmit" },
   "dependencies": {
-    "@soksak/soksak-contract-plugin-terminal": "file:../../soksak-contracts/soksak-contract-plugin-terminal"
+    "@soksak/soksak-contract-plugin-terminal": "github:soksak-ai/soksak-contract-plugin-terminal#29226a04c3e06da27e9a8cca7b718561c95f3ae4"
   },
   "devDependencies": { "jsdom": "30.0.1", "typescript": "5.9.3", "vitest": "3.2.4" }
 }
