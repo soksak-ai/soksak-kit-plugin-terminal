@@ -5,6 +5,7 @@ export interface TerminalLayoutEvents {
 interface TerminalLayoutObserverOptions {
   element: Element;
   resized(): void;
+  reflowed?: () => void;
   events?: TerminalLayoutEvents;
   createResizeObserver?: (callback: ResizeObserverCallback) => Pick<ResizeObserver, "observe" | "disconnect">;
 }
@@ -13,7 +14,7 @@ export function observeTerminalLayout(options: TerminalLayoutObserverOptions): {
   const create = options.createResizeObserver ?? ((callback) => new ResizeObserver(callback));
   const observer = create(() => options.resized());
   observer.observe(options.element);
-  const reflow = options.events?.on("layout.reflow", options.resized);
+  const reflow = options.events?.on("layout.reflow", options.reflowed ?? options.resized);
   return {
     dispose() {
       observer.disconnect();

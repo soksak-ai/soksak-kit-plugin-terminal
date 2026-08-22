@@ -18,4 +18,20 @@ describe("terminal layout observer", () => {
     expect(disconnected).toHaveBeenCalledOnce();
     expect(disposed).toHaveBeenCalledOnce();
   });
+
+  it("may deliver post-commit reflow separately from ResizeObserver bursts", () => {
+    let resize: (() => void) | undefined;
+    let reflow: (() => void) | undefined;
+    const resized = vi.fn();
+    const reflowed = vi.fn();
+    observeTerminalLayout({
+      element: {} as Element, resized, reflowed,
+      createResizeObserver: (callback) => { resize = () => callback([], {} as ResizeObserver); return { observe() {}, disconnect() {} }; },
+      events: { on: (_event, callback) => { reflow = callback; return { dispose() {} }; } },
+    });
+    resize!();
+    reflow!();
+    expect(resized).toHaveBeenCalledOnce();
+    expect(reflowed).toHaveBeenCalledOnce();
+  });
 });
