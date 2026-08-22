@@ -20,6 +20,6 @@ test("repository owns public metadata", () => {
   assert.ok(releaseFiles.includes("kit.json"));
   assert.ok(releaseFiles.includes("src/index.ts"));
   const workflow = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
-  assert.match(workflow, /soksak-spec\n\s+ref: 3f6b9b4e26a84f9e86c9d6f569dfd5fe65d2b9b5/);
+  assert.match(workflow, /soksak-spec\n\s+ref: 1673f33d2102f6ad168f28871d312301fd307371/);
   assert.match(workflow, /owner-enforced immutable releases must be enabled/);
 });
