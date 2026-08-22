@@ -2,9 +2,14 @@
   "name": "@soksak/soksak-kit-plugin-terminal",
   "version": "0.0.1",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/soksak-ai/soksak-kit-plugin-terminal.git"
+  },
   "type": "module",
   "exports": { ".": "./src/index.ts" },
-  "scripts": { "test": "vitest run", "typecheck": "tsc --noEmit" },
+  "scripts": { "test": "node --test scripts/*.node.mjs && vitest run", "typecheck": "tsc --noEmit" },
   "dependencies": {
     "@soksak/soksak-contract-plugin-terminal": "file:../../soksak-contracts/soksak-contract-plugin-terminal"
   },
