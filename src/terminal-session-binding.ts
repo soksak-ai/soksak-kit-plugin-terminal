@@ -129,7 +129,7 @@ export function createTerminalSessionBinding(
       const operation = typeof value.op === "string" ? value.op : "";
       const commands: Record<string, string> = {
         prepareSession: "terminal.prepareSession", ensureSession: "terminal.ensureSession",
-        rehydrate: "terminal.rehydrate", resize: "terminal.resize", status: "terminal.status",
+        rehydrate: "terminal.rehydrate", resize: "terminal.resize", waitSize: "terminal.waitSize", status: "terminal.status",
         archived: "terminal.archived", retire: "terminal.retire",
         archive: "terminal.archive",
         frame: "terminal.frame",

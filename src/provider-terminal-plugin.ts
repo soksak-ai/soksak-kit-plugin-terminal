@@ -7,6 +7,7 @@ import { createProviderFramePresenter, type ProviderFrame } from "./provider-fra
 import { createTerminalSessionBinding, type TerminalSessionHost } from "./terminal-session-binding";
 import { createTerminalStatusController } from "./terminal-status-publication";
 import { waitForTerminalConditions } from "./terminal-condition-wait";
+import { waitForTerminalSize } from "./terminal-size-wait";
 
 interface ViewContext {
   viewId?: string | null;
@@ -101,6 +102,7 @@ export function activateProviderTerminalPlugin(
       let renderedSequence = 0;
       let rendering = false;
       let writable = false;
+      let resizeSequence = 0;
       const terminalSize = () => ({
         cols: Math.max(1, Math.floor(container.clientWidth / 8)),
         rows: Math.max(1, Math.floor(container.clientHeight / 16)),
@@ -151,11 +153,19 @@ export function activateProviderTerminalPlugin(
           rendering = false;
         }
       };
-      const resizeSession = () => {
+      const resizeSession = async () => {
         if (!session || container.clientWidth <= 0 || container.clientHeight <= 0) return;
         const { cols, rows } = terminalSize();
-        void binding.resize(session, cols, rows);
-        void binding.providerRequest({ op: "resize", pane, cols, rows });
+        const sequence = ++resizeSequence;
+        await binding.resize(session, cols, rows);
+        const observed = requireReply(await binding.providerRequest({
+          op: "waitSize", pane, cols, rows, timeoutMs: 8000,
+        }), "waitSize");
+        if (sequence !== resizeSequence || stopped) return;
+        if (!applyFrame(requireReply(await binding.providerRequest({ op: "frame", pane }), "frame"))) {
+          throw new Error("resize frame is invalid");
+        }
+        container.dispatchEvent(new CustomEvent("soksak:terminal-size", { detail: observed }));
       };
       const attach = (opened: number) => {
         session = opened;
@@ -168,7 +178,9 @@ export function activateProviderTerminalPlugin(
           readBuffer: (lines) => presenter.read(lines),
           sendInput: (data) => { if (writable && session) void binding.write(session, data); },
         });
-        resizeSession();
+        void resizeSession().catch((error) => status.set("blocked", {
+          failure: { code: "RESIZE_FAILED", message: String(error) }, fidelity: "unavailable",
+        }));
       };
       const startFresh = async () => {
         container.dataset.terminalOperation = "preparing-observer";
@@ -233,7 +245,11 @@ export function activateProviderTerminalPlugin(
         else if (!await startArchived()) await startFresh();
       };
 
-      const resize = new ResizeObserver(resizeSession);
+      const resize = new ResizeObserver(() => {
+        void resizeSession().catch((error) => status.set("blocked", {
+          failure: { code: "RESIZE_FAILED", message: String(error) }, fidelity: "unavailable",
+        }));
+      });
       resize.observe(container);
       void start().catch((error) => status.set("blocked", {
         failure: { code: "START_FAILED", message: String(error) },
@@ -300,6 +316,9 @@ export function activateProviderTerminalPlugin(
     },
     timeoutMs: { type: "number", default: 10000, description: { en: "Timeout in milliseconds", ko: "제한 시간(밀리초)" } },
     contains: { type: "string", description: { en: "Screen text", ko: "화면 텍스트" } },
+    cols: { type: "number", description: { en: "Exact terminal columns", ko: "정확한 터미널 열 수" } },
+    colsLessThan: { type: "number", description: { en: "Terminal columns below this value", ko: "이 값보다 작은 터미널 열 수" } },
+    rows: { type: "number", description: { en: "Exact terminal rows", ko: "정확한 터미널 행 수" } },
     view: viewParam,
   }, async (params) => {
     const screen = target(params);
@@ -311,6 +330,12 @@ export function activateProviderTerminalPlugin(
       contains: typeof params.contains === "string" && params.contains !== ""
         ? params.contains : undefined,
       timeoutMs, waitForText: screen.presenter.waitForText,
+      size: {
+        ...(typeof params.cols === "number" ? { cols: params.cols } : {}),
+        ...(typeof params.colsLessThan === "number" ? { colsLessThan: params.colsLessThan } : {}),
+        ...(typeof params.rows === "number" ? { rows: params.rows } : {}),
+      },
+      waitForSize: (condition, limit) => waitForTerminalSize(screen.presenter.root, condition, limit),
     });
     return {
       ...waited, ...screen.presenter.size(),
