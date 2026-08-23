@@ -98,7 +98,7 @@ interface MountedScreen {
   requestedSize: { cols: number; rows: number } | null;
   renderedOutputSequence: number | null;
   writable: boolean;
-  stop(): void;
+  stop(): Promise<void>;
 }
 
 const viewParam = { type: "string", description: { en: "Terminal view id", ko: "터미널 뷰 ID" } };
@@ -109,6 +109,7 @@ export function activateProviderTerminalPlugin(
   config: ProviderTerminalPluginConfig,
 ): void {
   const screens = new Map<string, MountedScreen>();
+  const stopBarriers = new Map<string, Promise<void>>();
   const binding = createTerminalSessionBinding(host, {
     ptySidecarId: config.ptySidecarId,
     terminalSidecarId: config.terminalSidecarId,
@@ -156,7 +157,7 @@ export function activateProviderTerminalPlugin(
     mount(container: HTMLElement, context: ViewContext) {
       const pane = context.viewId ?? "";
       if (!pane) throw new Error("terminal view requires a view id");
-      screens.get(pane)?.stop();
+      const readyToStart = screens.get(pane)?.stop() ?? stopBarriers.get(pane) ?? Promise.resolve();
 
       let session = 0;
       let stopped = false;
@@ -167,6 +168,8 @@ export function activateProviderTerminalPlugin(
       let rendering = false;
       let writable = false;
       let requestedSize: { cols: number; rows: number } | null = null;
+      let startTask = Promise.resolve();
+      let stopping: Promise<void> | null = null;
       const framePresenter = config.renderer ? undefined : createProviderFramePresenter(container, (text) => {
         if (writable && session) void binding.write(session, text);
       });
@@ -284,21 +287,29 @@ export function activateProviderTerminalPlugin(
         });
         requestResize();
       };
+      const detachIfStopped = async (opened: number): Promise<boolean> => {
+        if (!stopped) return false;
+        await binding.detach(opened);
+        return true;
+      };
       const startFresh = async () => {
         container.dataset.terminalOperation = "preparing-observer";
         const prepared = requireReply(await binding.recoveryRequest({
           op: "prepareSession", pane, cols: 80, rows: 24,
         }), "prepareSession");
+        if (stopped) return;
         const token = typeof prepared.observerToken === "string"
           ? prepared.observerToken : "";
         if (!token) throw new Error("prepareSession returned no observer token");
         container.dataset.terminalOperation = "opening-pty";
         const opened = await binding.open(pane, 80, 24, "none", token);
+        if (await detachIfStopped(opened)) return;
         requestedSize = { cols: 80, rows: 24 };
         container.dataset.terminalOperation = "subscribing-recovery";
         requireReply(await binding.recoveryRequest({
           op: "ensureSession", pane, cols: 80, rows: 24, observerToken: token,
         }), "ensureSession");
+        if (await detachIfStopped(opened)) return;
         attach(opened);
         container.dataset.terminalOperation = "ready";
         status.set("live", { recoveryOutcome: "fresh", fidelity: "complete" });
@@ -308,9 +319,11 @@ export function activateProviderTerminalPlugin(
         requireReply(await binding.recoveryRequest({
           op: "ensureSession", pane, cols: 80, rows: 24,
         }), "ensureSession");
+        if (stopped) return;
         const restored = requireReply(await binding.recoveryRequest({
           op: "rehydrate", pane,
         }), "rehydrate");
+        if (stopped) return;
         const leaseToken = typeof restored.leaseToken === "string"
           ? restored.leaseToken : "";
         if (!leaseToken || (config.renderer?.delivery === "bytes"
@@ -329,6 +342,7 @@ export function activateProviderTerminalPlugin(
         });
         container.dataset.terminalOperation = "attaching-snapshot-lease";
         const opened = await binding.open(pane, 80, 24, { leaseToken });
+        if (await detachIfStopped(opened)) return;
         requestedSize = { cols: 80, rows: 24 };
         attach(opened);
         container.dataset.terminalOperation = "ready";
@@ -337,6 +351,7 @@ export function activateProviderTerminalPlugin(
       const startArchived = async (): Promise<boolean> => {
         container.dataset.terminalOperation = "checking-archive";
         const archived = await binding.recoveryRequest({ op: "archived", pane });
+        if (stopped) return true;
         if (archived.ok !== true) {
           if (archived.code === "NOT_FOUND") return false;
           requireReply(archived, "archived");
@@ -361,18 +376,15 @@ export function activateProviderTerminalPlugin(
       const start = async () => {
         status.set("preparing-recovery");
         container.dataset.terminalOperation = "checking-live";
-        if (await binding.paneAlive(pane)) await startWarm();
-        else if (!await startArchived()) await startFresh();
+        const alive = await binding.paneAlive(pane);
+        if (stopped) return;
+        if (alive) await startWarm();
+        else if (!await startArchived() && !stopped) await startFresh();
       };
 
       const resize = observeTerminalLayout({ element: container, resized: requestResize, events: host.events });
       const capturePrepare = () => presenter.refresh?.();
       window.addEventListener("soksak:capture-prepare", capturePrepare);
-      void start().catch((error) => status.set("blocked", {
-        failure: { code: "START_FAILED", message: String(error) },
-        fidelity: "unavailable", recoveryOutcome: "blocked",
-      }));
-
       const viewDisposables: { dispose(): void }[] = [];
       const entry: MountedScreen = {
         pane,
@@ -383,6 +395,7 @@ export function activateProviderTerminalPlugin(
         get renderedOutputSequence() { return renderedSequence; },
         get writable() { return writable; },
         stop() {
+          if (stopping) return stopping;
           stopped = true;
           writable = false;
           resize.dispose();
@@ -390,12 +403,31 @@ export function activateProviderTerminalPlugin(
           output?.dispose();
           io?.dispose();
           viewDisposables.splice(0).forEach((item) => item.dispose());
-          if (session) binding.detach(session);
+          const attached = session;
+          session = 0;
           status.close();
           presenter.dispose();
+          stopping = (async () => {
+            if (attached) await binding.detach(attached);
+            await startTask.catch(() => {});
+          })();
+          stopBarriers.set(pane, stopping);
+          void stopping.finally(() => {
+            if (stopBarriers.get(pane) === stopping) stopBarriers.delete(pane);
+          });
+          return stopping;
         },
       };
       screens.set(pane, entry);
+      startTask = readyToStart.then(async () => {
+        if (!stopped) await start();
+      });
+      void startTask.catch((error) => {
+        if (!stopped) status.set("blocked", {
+          failure: { code: "START_FAILED", message: String(error) },
+          fidelity: "unavailable", recoveryOutcome: "blocked",
+        });
+      });
       if (host.ui.statusBarItem) {
         const locale = host.locale?.() ?? "en";
         const label = locale.startsWith("ko") ? config.label?.ko : config.label?.en;
@@ -418,7 +450,7 @@ export function activateProviderTerminalPlugin(
     unmount(container: HTMLElement) {
       const found = [...screens.entries()].find(([, value]) => value.presenter.root === container);
       if (!found) return;
-      found[1].stop();
+      void found[1].stop();
       screens.delete(found[0]);
     },
     prepareFocusTransfer(container: HTMLElement) {

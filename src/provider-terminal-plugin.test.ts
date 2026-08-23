@@ -7,6 +7,8 @@ import {
 } from "@soksak/soksak-contract-plugin-terminal";
 globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as typeof ResizeObserver;
 
+const settledClose = () => ({ dispose() {}, settled: Promise.resolve() });
+
 describe("provider-backed terminal plugin", () => {
   it("owns standard commands and session lifecycle for a byte presenter", async () => {
     let view: { mount(container: HTMLElement, context: unknown): void } | undefined;
@@ -26,7 +28,7 @@ describe("provider-backed terminal plugin", () => {
       }),
       stream: vi.fn(async (_request: unknown, handlers: { onBytes(bytes: Uint8Array): void }) => {
         handlers.onBytes(new Uint8Array([65]));
-        return { answer: { ok: true, result: { data: { startSeq: 0 } } }, close: { dispose() {} } };
+        return { answer: { ok: true, result: { data: { startSeq: 0 } } }, close: settledClose() };
       }),
     };
     const host: ProviderTerminalPluginHost = {
@@ -126,7 +128,7 @@ describe("provider-backed terminal plugin", () => {
       }),
       stream: vi.fn(async (request: Record<string, unknown>) => {
         requests.push(String(request.command));
-        return { answer: { ok: true, result: { data: { startSeq: 1 } } }, close: { dispose() {} } };
+        return { answer: { ok: true, result: { data: { startSeq: 1 } } }, close: settledClose() };
       }),
     };
     const host: ProviderTerminalPluginHost = {
@@ -166,7 +168,7 @@ describe("provider-backed terminal plugin", () => {
         return { ok: true, result: { data } };
       }),
       stream: vi.fn(async () => ({
-        answer: { ok: true, result: { data: { startSeq: 0 } } }, close: { dispose() {} },
+        answer: { ok: true, result: { data: { startSeq: 0 } } }, close: settledClose(),
       })),
     };
     const provider = {
@@ -210,7 +212,7 @@ describe("provider-backed terminal plugin", () => {
       secrets: { generate: async () => ({ created: true }) },
       sidecar: { open: async () => ({
         send: async () => ({ ok: true, result: { data: {} } }),
-        stream: async () => ({ answer: { ok: true, result: { data: {} } }, close: { dispose() {} } }),
+        stream: async () => ({ answer: { ok: true, result: { data: {} } }, close: settledClose() }),
       }) },
       ui: { registerView: () => ({ dispose() {} }) },
       commands: {
@@ -240,6 +242,9 @@ describe("provider-backed terminal plugin", () => {
   it("detaches presentation without ending the PTY session", async () => {
     let view: { mount(container: HTMLElement, context: unknown): void; unmount?(container: HTMLElement): void } | undefined;
     const requests: string[] = [];
+    let settleFirst!: () => void;
+    const firstSettled = new Promise<void>((resolve) => { settleFirst = resolve; });
+    let streamCount = 0;
     const channel = {
       send: vi.fn(async (request: Record<string, unknown>) => {
         const command = String(request.command); requests.push(command);
@@ -251,10 +256,13 @@ describe("provider-backed terminal plugin", () => {
           : command === "terminal.prepareSession" ? { observerToken: "observer" } : {};
         return { ok: true, result: { data } };
       }),
-      stream: vi.fn(async () => ({
-        answer: { ok: true, result: { data: { startSeq: 0 } } },
-        close: { dispose: vi.fn() },
-      })),
+      stream: vi.fn(async () => {
+        streamCount += 1;
+        return {
+          answer: { ok: true, result: { data: { startSeq: 0 } } },
+          close: { dispose: vi.fn(), settled: streamCount === 1 ? firstSettled : Promise.resolve() },
+        };
+      }),
     };
     const host: ProviderTerminalPluginHost = {
       windowLabel: () => "window",
@@ -270,7 +278,15 @@ describe("provider-backed terminal plugin", () => {
     view!.mount(root, { viewId: "pane" });
     await vi.waitFor(() => expect(requests).toContain("pty.open"));
     view!.unmount?.(root);
+    const replacement = document.createElement("div");
+    view!.mount(replacement, { viewId: "pane" });
     await Promise.resolve();
+    expect(requests.filter((command) => command === "pty.pane")).toHaveLength(1);
+    expect(requests.filter((command) => command === "pty.open")).toHaveLength(1);
+    settleFirst();
+    await vi.waitFor(() => expect(requests.filter((command) => command === "pty.pane")).toHaveLength(2));
+    await vi.waitFor(() => expect(requests.filter((command) => command === "pty.open")).toHaveLength(2));
+    expect(requests.indexOf("pty.detachRenderer")).toBeLessThan(requests.lastIndexOf("pty.open"));
     expect(requests).not.toContain("pty.close");
   });
 
@@ -292,7 +308,7 @@ describe("provider-backed terminal plugin", () => {
       }),
       stream: vi.fn(async (request: Record<string, unknown>) => ({
         answer: { ok: true, result: { data: { startSeq: 12 } } },
-        close: { dispose() {} },
+        close: settledClose(),
         request,
       })),
     };
@@ -331,7 +347,7 @@ describe("provider-backed terminal plugin", () => {
         return { ok: true, result: { data } };
       }),
       stream: vi.fn(async (_request: unknown, handlers: { onBytes(bytes: Uint8Array): void }) => {
-        emit = handlers.onBytes; return { answer: { ok: true, result: { data: { startSeq: 10 } } }, close: { dispose() {} } };
+        emit = handlers.onBytes; return { answer: { ok: true, result: { data: { startSeq: 10 } } }, close: settledClose() };
       }),
     };
     const provider = {
@@ -382,7 +398,7 @@ describe("provider-backed terminal plugin", () => {
           : command === "terminal.frame" ? { outputSequence: Number(asked.afterSequence), frame: { cols: 1, rows: 1, cursor: [0,0], alt_active: false, lines: [[]] } } : {};
         return { ok: true, result: { data } };
       }),
-      stream: vi.fn(async (_r: unknown, h: { onBytes(bytes: Uint8Array): void }) => { emit = h.onBytes; return { answer: { ok: true, result: { data: { startSeq: 0 } } }, close: { dispose() {} } }; }),
+      stream: vi.fn(async (_r: unknown, h: { onBytes(bytes: Uint8Array): void }) => { emit = h.onBytes; return { answer: { ok: true, result: { data: { startSeq: 0 } } }, close: settledClose() }; }),
     });
     const pty = channel(), provider = channel();
     const host: ProviderTerminalPluginHost = { windowLabel: () => "w", secrets: { generate: async () => ({ created: true }) }, sidecar: { open: async (n) => n === "soksak-sidecar-pty" ? pty : provider }, ui: { registerView: (_i,v) => { view=v; return { dispose(){} }; } }, commands: { register: () => ({ dispose(){} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) } };

@@ -21,6 +21,9 @@ stream paths are forbidden.
 Public status carries the same absolute output coordinate across PTY production, recovery mirror
 application, and completed renderer application. A byte renderer completes output only after its
 parser callback; a frame renderer uses the sequence returned atomically with the frame.
+One pane owns one renderer generation. Unmount closes the exact byte stream, awaits the Core close
+receipt, explicitly detaches that PTY generation, and only then lets a replacement mount start. A
+stale async mount cannot open or attach after it was stopped.
 
 ## Verification
 

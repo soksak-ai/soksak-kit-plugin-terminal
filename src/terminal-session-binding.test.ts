@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTerminalSessionBinding, type TerminalSidecarChannel } from "./terminal-session-binding";
 
+const settledClose = () => ({ dispose() {}, settled: Promise.resolve() });
+
 describe("shared terminal session binding", () => {
   it("identifies a sidecar when a response has no error detail", async () => {
     const channel: TerminalSidecarChannel = {
@@ -28,7 +30,7 @@ describe("shared terminal session binding", () => {
       }),
       stream: vi.fn(async (_request, handlers) => {
         onBytes = handlers.onBytes;
-        return { answer: { ok: true, result: { data: { startSeq: 41 } } }, close: { dispose() {} } };
+        return { answer: { ok: true, result: { data: { startSeq: 41 } } }, close: settledClose() };
       }),
     };
     const provider: TerminalSidecarChannel = {
@@ -77,7 +79,7 @@ describe("shared terminal session binding", () => {
       stream: vi.fn(async (_request, handlers) => {
         onBytes = handlers.onBytes;
         handlers.onBytes(new Uint8Array([65, 66, 67]));
-        return { answer: { ok: true, result: { data: { startSeq: 41 } } }, close: { dispose() {} } };
+        return { answer: { ok: true, result: { data: { startSeq: 41 } } }, close: settledClose() };
       }),
     };
     const binding = createTerminalSessionBinding({
@@ -93,5 +95,35 @@ describe("shared terminal session binding", () => {
 
     expect(acknowledgements).toEqual([44, 45]);
     expect(received).toEqual([65, 66, 67, 68]);
+  });
+
+  it("closes the byte stream before explicitly detaching its renderer generation", async () => {
+    const order: string[] = [];
+    let settleClose!: () => void;
+    const settled = new Promise<void>((resolve) => { settleClose = resolve; });
+    const channel: TerminalSidecarChannel = {
+      send: vi.fn(async (request) => {
+        order.push(String(request.command));
+        const data = request.command === "pty.open" ? { session: 9 } : {};
+        return { ok: true, result: { data } };
+      }),
+      stream: vi.fn(async () => ({
+        answer: { ok: true, result: { data: { startSeq: 0 } } },
+        close: { dispose: () => { order.push("stream.close"); }, settled },
+      })),
+    };
+    const binding = createTerminalSessionBinding({
+      windowLabel: () => "window-a",
+      commands: { execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
+      sidecar: { open: async () => channel },
+    }, { ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-vt100" });
+
+    const session = await binding.open("pane-a", 80, 24, "none");
+    const detaching = binding.detach(session);
+    await Promise.resolve();
+    expect(order).not.toContain("pty.detachRenderer");
+    settleClose();
+    await detaching;
+    expect(order.slice(-2)).toEqual(["stream.close", "pty.detachRenderer"]);
   });
 });

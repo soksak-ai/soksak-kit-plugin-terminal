@@ -27,3 +27,6 @@ PTY 출력은 하나의 절대 source sequence로 정렬합니다. 스트림 연
 공개 상태는 PTY 생성, 복원 mirror 적용, renderer 적용 완료를 같은 절대 출력 좌표로
 노출합니다. byte renderer는 parser callback이 끝난 뒤에만 완료하며 frame renderer는 frame과
 원자적으로 반환된 sequence만 사용합니다.
+하나의 pane은 하나의 renderer generation만 소유합니다. unmount는 정확한 byte stream을 닫고
+Core close receipt를 기다린 뒤 PTY generation을 명시적으로 detach합니다. 교체 mount는 이
+transaction이 끝난 뒤에만 시작하며 중지된 비동기 mount는 이후 open/attach할 수 없습니다.
