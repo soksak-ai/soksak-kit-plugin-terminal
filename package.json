@@ -12,8 +12,11 @@
   "type": "module",
   "exports": { ".": "./src/index.ts" },
   "scripts": { "test": "node --test scripts/*.node.mjs && vitest run src", "typecheck": "tsc --noEmit" },
-  "dependencies": {
-    "@soksak/soksak-contract-plugin-terminal": "github:soksak-ai/soksak-contract-plugin-terminal#39fe76a56b520f15ba8256620b3b05d89ff34a9d"
+  "peerDependencies": {
+    "@soksak/soksak-contract-plugin-terminal": "0.0.3"
   },
-  "devDependencies": { "jsdom": "30.0.1", "typescript": "5.9.3", "vitest": "3.2.4" }
+  "devDependencies": {
+    "@soksak/soksak-contract-plugin-terminal": "github:soksak-ai/soksak-contract-plugin-terminal#39fe76a56b520f15ba8256620b3b05d89ff34a9d",
+    "jsdom": "30.0.1", "typescript": "5.9.3", "vitest": "3.2.4"
+  }
 }
