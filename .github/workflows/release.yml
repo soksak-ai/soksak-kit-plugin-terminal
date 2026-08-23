@@ -20,15 +20,13 @@ jobs:
         with:
           path: component
           persist-credentials: false
-      - id: spec-ref
-        working-directory: component
-        run: echo "commit=$(cat soksak-spec.ref)" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: soksak-ai/soksak-spec
-          ref: ${{ steps.spec-ref.outputs.commit }}
-          path: soksak-spec
-          persist-credentials: false
+      - name: Install the immutable public spec package
+        run: |
+          mkdir -p spec-package
+          curl -fsSL https://github.com/soksak-ai/soksak-spec/releases/download/v0.0.22/soksak-ai-plugin-spec-0.0.22.tgz -o soksak-spec.tgz
+          echo "7142e0c4efe28b5a6335b3e192a2d1db2f04518f3d5cf907af23ab05ea74e638  soksak-spec.tgz" | sha256sum -c -
+          tar -xzf soksak-spec.tgz -C spec-package --strip-components=1
+          test -z "$(find spec-package -type l -print -quit)"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version-file: component/package.json
@@ -40,12 +38,8 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm test
           pnpm typecheck
-      - working-directory: soksak-spec
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm build
       - working-directory: component
-        run: node ../soksak-spec/packages/plugin-spec/release-template/build-portable-release.mjs --commit "${{ github.sha }}" --out "$GITHUB_WORKSPACE/artifacts"
+        run: node ../spec-package/release-template/build-portable-release.mjs --commit "${{ github.sha }}" --out "$GITHUB_WORKSPACE/artifacts"
       - id: release-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
         with:
@@ -59,4 +53,4 @@ jobs:
           GH_TOKEN: ${{ steps.release-token.outputs.token }}
         run: |
           test "$(gh api repos/${{ github.repository }}/immutable-releases --jq '.enabled and .enforced_by_owner')" = true || { echo "owner-enforced immutable releases must be enabled before tagging" >&2; exit 1; }
-          node ../soksak-spec/packages/plugin-spec/release-template/publish-canonical-release.mjs --repository "${{ github.repository }}" --commit "${{ github.sha }}" --artifacts "$GITHUB_WORKSPACE/artifacts" --manifest "$GITHUB_WORKSPACE/artifacts/release.json"
+          node ../spec-package/release-template/publish-canonical-release.mjs --repository "${{ github.repository }}" --commit "${{ github.sha }}" --artifacts "$GITHUB_WORKSPACE/artifacts" --manifest "$GITHUB_WORKSPACE/artifacts/release.json"

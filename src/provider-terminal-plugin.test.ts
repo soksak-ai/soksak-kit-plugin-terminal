@@ -40,7 +40,7 @@ describe("provider-backed terminal plugin", () => {
       },
     };
     activateProviderTerminalPlugin(host, [], {
-      pluginId: "plugin", engineId: "byte", recoverySidecar: "recovery",
+      pluginId: "plugin", engineId: "byte", ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-vt100",
       programId: "terminal-byte", renderer: {
         delivery: "bytes", rendererId: "byte-renderer",
         create: (container) => ({
@@ -71,7 +71,7 @@ describe("provider-backed terminal plugin", () => {
       commands: { register: vi.fn(() => ({ dispose() {} })) },
     } as unknown as ProviderTerminalPluginHost;
     expect(() => activateProviderTerminalPlugin(host, [], {
-      pluginId: "plugin", engineId: "byte", recoverySidecar: "recovery",
+      pluginId: "plugin", engineId: "byte", ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-vt100",
       programId: "terminal-byte",
       extensions: [{ name: "status", params: {}, handler: () => ({}) }],
     })).toThrow("terminal extension cannot replace standard command status");
@@ -97,7 +97,7 @@ describe("provider-backed terminal plugin", () => {
       commands: { register: () => ({ dispose() {} }) },
     } as unknown as ProviderTerminalPluginHost;
     activateProviderTerminalPlugin(host, [], {
-      pluginId: "plugin", engineId: "frame", recoverySidecar: "recovery",
+      pluginId: "plugin", engineId: "frame", ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-vt100",
       programId: "terminal-frame", label: { en: "Terminal", ko: "터미널" },
     });
     const root = document.createElement("div"); document.body.append(root);
@@ -135,7 +135,7 @@ describe("provider-backed terminal plugin", () => {
       commands: { register: () => ({ dispose() {} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
     };
     activateProviderTerminalPlugin(host, [], {
-      pluginId: "plugin", engineId: "byte", recoverySidecar: "recovery",
+      pluginId: "plugin", engineId: "byte", ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-vt100",
       programId: "terminal-byte", renderer: {
         delivery: "bytes", rendererId: "byte-renderer",
         create: (container) => ({
@@ -182,7 +182,7 @@ describe("provider-backed terminal plugin", () => {
     };
     const host: ProviderTerminalPluginHost = {
       windowLabel: () => "window", secrets: { generate: async () => ({ created: true }) },
-      sidecar: { open: async (name) => name === "pty" ? pty : provider },
+      sidecar: { open: async (name) => name === "soksak-sidecar-pty" ? pty : provider },
       events: { on: (event: "layout.reflow" | "window.gone", callback: (() => void) | ((payload: { windowLabel?: string }) => void)) => {
         if (event === "layout.reflow") reflow = callback as () => void;
         return { dispose() {} };
@@ -190,7 +190,7 @@ describe("provider-backed terminal plugin", () => {
       ui: { registerView: (_id, item) => { view = item; return { dispose() {} }; } },
       commands: { register: () => ({ dispose() {} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
     };
-    activateProviderTerminalPlugin(host, [], { pluginId: "plugin", engineId: "vt100", recoverySidecar: "recovery", programId: "terminal-vt100" });
+    activateProviderTerminalPlugin(host, [], { pluginId: "plugin", engineId: "vt100", ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-vt100", programId: "terminal-vt100" });
     const root = document.createElement("div");
     Object.defineProperty(root, "clientWidth", { get: () => width });
     Object.defineProperty(root, "clientHeight", { value: 384 });
@@ -219,7 +219,7 @@ describe("provider-backed terminal plugin", () => {
       },
     };
     activateProviderTerminalPlugin(host, [], {
-      pluginId: "plugin", engineId: "vt100", recoverySidecar: "recovery", programId: "terminal-vt100",
+      pluginId: "plugin", engineId: "vt100", ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-vt100", programId: "terminal-vt100",
     });
     expect([...registered.keys()].sort()).toEqual([...TERMINAL_PLUGIN_COMMANDS].sort());
     for (const command of TERMINAL_PLUGIN_COMMANDS) {
@@ -264,7 +264,7 @@ describe("provider-backed terminal plugin", () => {
       commands: { register: () => ({ dispose() {} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
     };
     activateProviderTerminalPlugin(host, [], {
-      pluginId: "plugin", engineId: "vt100", recoverySidecar: "recovery", programId: "terminal-vt100",
+      pluginId: "plugin", engineId: "vt100", ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-vt100", programId: "terminal-vt100",
     });
     const root = document.createElement("div"); document.body.append(root);
     view!.mount(root, { viewId: "pane" });
@@ -304,7 +304,7 @@ describe("provider-backed terminal plugin", () => {
       commands: { register: () => ({ dispose() {} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
     };
     activateProviderTerminalPlugin(host, [], {
-      pluginId: "plugin", engineId: "vt100", recoverySidecar: "recovery", programId: "terminal-vt100",
+      pluginId: "plugin", engineId: "vt100", ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-vt100", programId: "terminal-vt100",
     });
     const root = document.createElement("div"); document.body.append(root);
     view!.mount(root, { viewId: "pane" });
@@ -346,14 +346,14 @@ describe("provider-backed terminal plugin", () => {
     };
     const host: ProviderTerminalPluginHost = {
       windowLabel: () => "window", secrets: { generate: vi.fn(async () => ({ created: true })) },
-      sidecar: { open: async (name) => name === "pty" ? pty : provider },
+      sidecar: { open: async (name) => name === "soksak-sidecar-pty" ? pty : provider },
       ui: { registerView: (_id, item) => { view = item; return { dispose() {} }; } },
       commands: {
         register: (name, spec) => { commands.set(name, (spec as { handler(p: Record<string, unknown>): unknown }).handler); return { dispose() {} }; },
         execute: async () => ({ data: { loginShell: "/bin/zsh" } }),
       },
     };
-    activateProviderTerminalPlugin(host, [], { pluginId: "plugin", engineId: "vt100", recoverySidecar: "recovery", programId: "terminal-vt100" });
+    activateProviderTerminalPlugin(host, [], { pluginId: "plugin", engineId: "vt100", ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-vt100", programId: "terminal-vt100" });
     const root = document.createElement("div"); document.body.append(root); view!.mount(root, { viewId: "pane" });
     await vi.waitFor(() => expect(emit).toBeTypeOf("function")); emit!(new Uint8Array([79, 75]));
     await vi.waitFor(() => expect(root.querySelector('[data-node="terminal-screen"]')?.textContent).toContain("OK"));
@@ -385,8 +385,8 @@ describe("provider-backed terminal plugin", () => {
       stream: vi.fn(async (_r: unknown, h: { onBytes(bytes: Uint8Array): void }) => { emit = h.onBytes; return { answer: { ok: true, result: { data: { startSeq: 0 } } }, close: { dispose() {} } }; }),
     });
     const pty = channel(), provider = channel();
-    const host: ProviderTerminalPluginHost = { windowLabel: () => "w", secrets: { generate: async () => ({ created: true }) }, sidecar: { open: async (n) => n === "pty" ? pty : provider }, ui: { registerView: (_i,v) => { view=v; return { dispose(){} }; } }, commands: { register: () => ({ dispose(){} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) } };
-    activateProviderTerminalPlugin(host, [], { pluginId:"p", engineId:"e", recoverySidecar:"recovery", programId:"terminal-e" });
+    const host: ProviderTerminalPluginHost = { windowLabel: () => "w", secrets: { generate: async () => ({ created: true }) }, sidecar: { open: async (n) => n === "soksak-sidecar-pty" ? pty : provider }, ui: { registerView: (_i,v) => { view=v; return { dispose(){} }; } }, commands: { register: () => ({ dispose(){} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) } };
+    activateProviderTerminalPlugin(host, [], { pluginId:"p", engineId:"e", ptySidecarId: "soksak-sidecar-pty", terminalSidecarId:"soksak-sidecar-terminal-vt100", programId:"terminal-e" });
     const root=document.createElement("div"); view!.mount(root,{viewId:"pane"}); await vi.waitFor(()=>expect(emit).toBeTypeOf("function"));
     emit!(new Uint8Array([1])); emit!(new Uint8Array([2])); emit!(new Uint8Array([3])); release();
     await vi.waitFor(()=>expect(frameSequences).toEqual([1,3]));

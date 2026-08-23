@@ -33,8 +33,8 @@ export interface TerminalSessionBinding {
 }
 
 export interface TerminalSessionBindingOptions {
-  ptySidecar: string;
-  recoverySidecar: string;
+  ptySidecarId: string;
+  terminalSidecarId: string;
   checkpointKey?: string;
   onOperation?: (operation: string) => void;
 }
@@ -54,12 +54,12 @@ export function createTerminalSessionBinding(
     return ((response.result as { data?: unknown } | undefined)?.data ?? {}) as Record<string, unknown>;
   };
   let ptyPromise: Promise<TerminalSidecarChannel> | null = null;
-  const pty = () => (ptyPromise ??= host.sidecar.open(options.ptySidecar));
+  const pty = () => (ptyPromise ??= host.sidecar.open(options.ptySidecarId));
   let recoveryPromise: Promise<TerminalSidecarChannel> | null = null;
   const recovery = () => (recoveryPromise ??= (async () => {
     const key = options.checkpointKey ?? "terminal-checkpoint-key-v1";
     options.onOperation?.("opening-recovery");
-    return host.sidecar.open(options.recoverySidecar, {
+    return host.sidecar.open(options.terminalSidecarId, {
       generatedSecretEnv: { [KEY_ENV]: { key, bytes: 32 } },
     });
   })());

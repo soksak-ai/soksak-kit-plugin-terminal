@@ -50,7 +50,8 @@ export interface ProviderTerminalPluginHost extends TerminalSessionHost {
 export interface ProviderTerminalPluginConfig {
   pluginId: string;
   engineId: string;
-  recoverySidecar: string;
+  ptySidecarId: string;
+  terminalSidecarId: string;
   programId: string;
   renderer?: TerminalRendererAdapter;
   extensions?: TerminalCommandExtension[];
@@ -108,8 +109,8 @@ export function activateProviderTerminalPlugin(
 ): void {
   const screens = new Map<string, MountedScreen>();
   const binding = createTerminalSessionBinding(host, {
-    ptySidecar: "pty",
-    recoverySidecar: config.recoverySidecar,
+    ptySidecarId: config.ptySidecarId,
+    terminalSidecarId: config.terminalSidecarId,
     onOperation(operation) {
       for (const screen of screens.values()) {
         screen.presenter.root.dataset.terminalOperation = operation;
