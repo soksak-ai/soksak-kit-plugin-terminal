@@ -38,8 +38,8 @@ test("repository owns public metadata", () => {
   const workflow = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
   assert.match(workflow, /node-version-file: component\/package\.json/);
   assert.match(workflow, /package_json_file: component\/package\.json/);
-  assert.match(workflow, /v0\.0\.22\/soksak-ai-plugin-spec-0\.0\.22\.tgz/);
-  assert.match(workflow, /7142e0c4efe28b5a6335b3e192a2d1db2f04518f3d5cf907af23ab05ea74e638/);
+  assert.match(workflow, /releases\/download\/v0\.0\.29\/soksak-ai-plugin-spec-0\.0\.29[.]tgz/);
+  assert.match(workflow, /f3311f6e20069667486e753e8669e7f7787f197f47e4a94e14207a066c2db32c/);
   assert.doesNotMatch(workflow, /repository: soksak-ai\/soksak-spec/);
   assert.match(workflow, /owner-enforced immutable releases must be enabled/);
 });
