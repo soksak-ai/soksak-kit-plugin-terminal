@@ -1,6 +1,6 @@
 {
   "name": "@soksak/soksak-kit-plugin-terminal",
-  "version": "0.0.15",
+  "version": "0.0.16",
   "engines": { "node": "26.7.0" },
   "packageManager": "pnpm@11.22.0",
   "private": true,
@@ -13,10 +13,10 @@
   "exports": { ".": { "types": "./src/index.ts", "default": "./dist/index.js" } },
   "scripts": { "build": "node build.mjs", "test": "pnpm build && node --test scripts/*.node.mjs && vitest run src", "typecheck": "tsc --noEmit" },
   "peerDependencies": {
-    "@soksak/soksak-contract-plugin-terminal": "0.0.4"
+    "@soksak/soksak-contract-plugin-terminal": "0.0.5"
   },
   "devDependencies": {
-    "@soksak/soksak-contract-plugin-terminal": "https://codeload.github.com/soksak-ai/soksak-contract-plugin-terminal/tar.gz/refs/tags/v0.0.4",
+    "@soksak/soksak-contract-plugin-terminal": "https://github.com/soksak-ai/soksak-contract-plugin-terminal/releases/download/v0.0.5/soksak-contract-plugin-terminal-0.0.5-any.tgz",
     "esbuild": "0.28.2", "jsdom": "30.0.1", "typescript": "5.9.3", "vitest": "3.2.4"
   }
 }

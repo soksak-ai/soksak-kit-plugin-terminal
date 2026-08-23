@@ -1,6 +1,6 @@
 # soksak-kit-plugin-terminal
 
-`soksak-spec-plugin-terminal` 0.0.3을 구현하는 터미널 플러그인의 공통 브라우저 구현입니다.
+`soksak-spec-plugin-terminal` 0.0.4를 구현하는 터미널 플러그인의 공통 브라우저 구현입니다.
 
 이 kit가 view 등록, PTY 및 복원 수명 주기, 크기 변경, 공개 상태와 터미널 계약의 모든
 표준 명령을 소유합니다. 플러그인은 엔진별 렌더링, 입력, IME, focus와 snapshot 적용을
@@ -24,3 +24,6 @@ PTY 출력은 하나의 절대 source sequence로 정렬합니다. 스트림 연
 전에 도착한 바이트는 보관하며, 연결 응답 뒤 그 `startSeq`부터 도착 순서대로 정확히 한 번
 전달하고 ACK합니다. sequence 후퇴, 상대 좌표 ACK, 재시도, provider별 별도 스트림 경로는
 허용하지 않습니다.
+공개 상태는 PTY 생성, 복원 mirror 적용, renderer 적용 완료를 같은 절대 출력 좌표로
+노출합니다. byte renderer는 parser callback이 끝난 뒤에만 완료하며 frame renderer는 frame과
+원자적으로 반환된 sequence만 사용합니다.

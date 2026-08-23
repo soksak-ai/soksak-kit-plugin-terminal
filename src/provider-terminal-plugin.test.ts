@@ -48,7 +48,7 @@ describe("provider-backed terminal plugin", () => {
         size: () => ({ cols: 80, rows: 24 }),
         fit() {},
         applySnapshot: async (snapshot) => { snapshots.push(snapshot); },
-        writeOutput: (bytes) => { output.push(bytes); },
+        writeOutput: async (bytes) => { output.push(bytes); },
         read: () => "A",
         waitForText: async () => "A",
         focus: () => true,
@@ -120,7 +120,7 @@ describe("provider-backed terminal plugin", () => {
       send: vi.fn(async (request: Record<string, unknown>) => {
         const command = String(request.command); requests.push(command);
         const data = command === "pty.pane" ? { held: true }
-          : command === "terminal.rehydrate" ? { leaseToken: "lease", paint: "QQ==" }
+          : command === "terminal.rehydrate" ? { leaseToken: "lease", paint: "QQ==", uptoSeq: 41 }
           : command === "pty.open" ? { session: 9 } : {};
         return { ok: true, result: { data } };
       }),
@@ -140,7 +140,7 @@ describe("provider-backed terminal plugin", () => {
         delivery: "bytes", rendererId: "byte-renderer",
         create: (container) => ({
           root: container, size: () => ({ cols: 80, rows: 24 }),
-          applySnapshot: async (snapshot) => { snapshots.push(snapshot); }, writeOutput() {},
+          applySnapshot: async (snapshot) => { snapshots.push(snapshot); }, async writeOutput() {},
           read: () => "", waitForText: async () => "", focus: () => true, dispose() {},
         }),
       },
@@ -148,7 +148,7 @@ describe("provider-backed terminal plugin", () => {
     const root = document.createElement("div"); document.body.append(root);
     view!.mount(root, { viewId: "pane" });
     await vi.waitFor(() => expect(root.dataset.terminalRecovery).toBe("continued"));
-    expect(snapshots).toEqual([{ leaseToken: "lease", paint: "QQ==" }]);
+    expect(snapshots).toEqual([{ leaseToken: "lease", paint: "QQ==", uptoSeq: 41 }]);
     expect(requests).toContain("pty.attachLease");
   });
 
@@ -175,7 +175,7 @@ describe("provider-backed terminal plugin", () => {
         const payload = (request.args as { request: Record<string, unknown> }).request;
         const data = request.command === "terminal.prepareSession" ? { observerToken: "observer" }
           : request.command === "terminal.waitSize" ? { cols: payload.cols, rows: payload.rows }
-          : request.command === "terminal.frame" ? { cols: Number(payload.cols ?? 54), rows: 24, cursor: [0,0], alt_active: false, lines: [[]] } : {};
+          : request.command === "terminal.frame" ? { outputSequence: 0, frame: { cols: Number(payload.cols ?? 54), rows: 24, cursor: [0,0], alt_active: false, lines: [[]] } } : {};
         return { ok: true, result: { data } };
       }),
       stream: vi.fn(),
@@ -339,7 +339,7 @@ describe("provider-backed terminal plugin", () => {
         const command = request.command;
         if (command === "terminal.archived") return { ok: false, error: "not found", result: { code: "NOT_FOUND" } };
         const data = command === "terminal.prepareSession" ? { observerToken: "obs" }
-          : command === "terminal.frame" ? { cols: 4, rows: 1, cursor: [0, 2], alt_active: false, lines: [[{ text: "OK", fg: "default", bg: "default", attrs: 0, wide: false }]] } : {};
+          : command === "terminal.frame" ? { outputSequence: 12, frame: { cols: 4, rows: 1, cursor: [0, 2], alt_active: false, lines: [[{ text: "OK", fg: "default", bg: "default", attrs: 0, wide: false }]] } } : {};
         return { ok: true, result: { data } };
       }),
       stream: vi.fn(),
@@ -379,7 +379,7 @@ describe("provider-backed terminal plugin", () => {
         if (command === "terminal.frame") { frameSequences.push(Number(asked.afterSequence)); if (frameSequences.length === 1) await blocked; }
         if (command === "terminal.archived") return { ok: false, error: "not found", result: { code: "NOT_FOUND" } };
         const data = command === "pty.open" ? { session: 1 } : command === "terminal.prepareSession" ? { observerToken: "o" }
-          : command === "terminal.frame" ? { cols: 1, rows: 1, cursor: [0,0], alt_active: false, lines: [[]] } : {};
+          : command === "terminal.frame" ? { outputSequence: Number(asked.afterSequence), frame: { cols: 1, rows: 1, cursor: [0,0], alt_active: false, lines: [[]] } } : {};
         return { ok: true, result: { data } };
       }),
       stream: vi.fn(async (_r: unknown, h: { onBytes(bytes: Uint8Array): void }) => { emit = h.onBytes; return { answer: { ok: true, result: { data: { startSeq: 0 } } }, close: { dispose() {} } }; }),

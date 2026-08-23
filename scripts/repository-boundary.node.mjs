@@ -15,15 +15,15 @@ test("repository owns public metadata", () => {
     "git+https://github.com/soksak-ai/soksak-kit-plugin-terminal.git",
   );
   const kit = JSON.parse(readFileSync(join(root, "kit.json"), "utf8"));
-  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.15" });
+  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.16" });
   assert.equal(pkg.version, kit.version);
   assert.match(pkg.engines.node, /^\d+\.\d+\.\d+$/);
   assert.match(pkg.packageManager, /^pnpm@\d+\.\d+\.\d+$/);
   assert.equal("pnpm" in pkg, false);
-  assert.match(pkg.peerDependencies["@soksak/soksak-contract-plugin-terminal"], /^\d+\.\d+\.\d+$/);
-  assert.match(
+  assert.equal(pkg.peerDependencies["@soksak/soksak-contract-plugin-terminal"], "0.0.5");
+  assert.equal(
     pkg.devDependencies["@soksak/soksak-contract-plugin-terminal"],
-    new RegExp("^https://codeload[.]github[.]com/soksak-ai/soksak-contract-plugin-terminal/tar[.]gz/refs/tags/v[0-9]+[.][0-9]+[.][0-9]+$"),
+    "https://github.com/soksak-ai/soksak-contract-plugin-terminal/releases/download/v0.0.5/soksak-contract-plugin-terminal-0.0.5-any.tgz",
   );
   assert.equal(pkg.dependencies, undefined);
   assert.match(readFileSync(join(root, "pnpm-workspace.yaml"), "utf8"), /allowBuilds:\n  esbuild: true/);

@@ -9,8 +9,8 @@ importers:
   .:
     devDependencies:
       '@soksak/soksak-contract-plugin-terminal':
-        specifier: https://codeload.github.com/soksak-ai/soksak-contract-plugin-terminal/tar.gz/refs/tags/v0.0.4
-        version: https://codeload.github.com/soksak-ai/soksak-contract-plugin-terminal/tar.gz/refs/tags/v0.0.4
+        specifier: https://github.com/soksak-ai/soksak-contract-plugin-terminal/releases/download/v0.0.5/soksak-contract-plugin-terminal-0.0.5-any.tgz
+        version: https://github.com/soksak-ai/soksak-contract-plugin-terminal/releases/download/v0.0.5/soksak-contract-plugin-terminal-0.0.5-any.tgz
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -387,9 +387,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@soksak/soksak-contract-plugin-terminal@https://codeload.github.com/soksak-ai/soksak-contract-plugin-terminal/tar.gz/refs/tags/v0.0.4':
-    resolution: {integrity: sha512-VBWi+WQoAt8oI+Etu6eJNV++owBYyF2IyeQhNbF3sojb1P1a73hbUNq62RA/OJmI3rgVx1zHqLr8JLHjG7dylg==, tarball: https://codeload.github.com/soksak-ai/soksak-contract-plugin-terminal/tar.gz/refs/tags/v0.0.4}
-    version: 0.0.4
+  '@soksak/soksak-contract-plugin-terminal@https://github.com/soksak-ai/soksak-contract-plugin-terminal/releases/download/v0.0.5/soksak-contract-plugin-terminal-0.0.5-any.tgz':
+    resolution: {integrity: sha512-lJ+jCQzwizt9cmuy1x4zBZq6naA0VvpKVAhQXj+pZG+rN8ujOScgu4YSBw93dIOxHN7Z8nhEjB7D/QYw+BTsJg==, tarball: https://github.com/soksak-ai/soksak-contract-plugin-terminal/releases/download/v0.0.5/soksak-contract-plugin-terminal-0.0.5-any.tgz}
+    version: 0.0.5
     engines: {node: 26.7.0}
 
   '@types/chai@5.2.3':
@@ -962,7 +962,7 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.62.4':
     optional: true
 
-  '@soksak/soksak-contract-plugin-terminal@https://codeload.github.com/soksak-ai/soksak-contract-plugin-terminal/tar.gz/refs/tags/v0.0.4': {}
+  '@soksak/soksak-contract-plugin-terminal@https://github.com/soksak-ai/soksak-contract-plugin-terminal/releases/download/v0.0.5/soksak-contract-plugin-terminal-0.0.5-any.tgz': {}
 
   '@types/chai@5.2.3':
     dependencies:

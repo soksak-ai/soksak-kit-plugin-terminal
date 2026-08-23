@@ -1,7 +1,7 @@
 # soksak-kit-plugin-terminal
 
 Reusable browser-side implementation for terminal plugins implementing
-`soksak-spec-plugin-terminal` 0.0.3.
+`soksak-spec-plugin-terminal` 0.0.4.
 
 The kit owns view registration, PTY and recovery lifecycle, resizing, public status, and every
 command required by the terminal plugin contract. A plugin may supply a renderer adapter for engine
@@ -18,6 +18,9 @@ PTY output is ordered by one absolute source sequence. A stream attachment estab
 the transport before the attachment answer are retained, then delivered once in arrival order from
 that exact `startSeq`. Sequence rollback, relative acknowledgements, retries, and provider-specific
 stream paths are forbidden.
+Public status carries the same absolute output coordinate across PTY production, recovery mirror
+application, and completed renderer application. A byte renderer completes output only after its
+parser callback; a frame renderer uses the sequence returned atomically with the frame.
 
 ## Verification
 

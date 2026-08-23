@@ -65,7 +65,7 @@ export interface TerminalPresenter {
   fit?(): void;
   renderFrame?(frame: ProviderFrame): void;
   applySnapshot?(snapshot: Record<string, unknown>, archived: boolean): Promise<void> | void;
-  writeOutput?(bytes: Uint8Array): void;
+  writeOutput?(bytes: Uint8Array): Promise<void>;
   read(lines?: number): string;
   waitForText(contains: string, timeoutMs: number): Promise<string>;
   focus(): boolean;
@@ -96,6 +96,7 @@ interface MountedScreen {
   session: number;
   status: ReturnType<typeof createTerminalStatusController>;
   requestedSize: { cols: number; rows: number } | null;
+  renderedOutputSequence: number | null;
   writable: boolean;
   stop(): void;
 }
@@ -162,7 +163,7 @@ export function activateProviderTerminalPlugin(
       let output: { dispose(): void } | undefined;
       let io: { dispose(): void } | undefined;
       let requestedSequence = 0;
-      let renderedSequence = 0;
+      let renderedSequence: number | null = null;
       let rendering = false;
       let writable = false;
       let requestedSize: { cols: number; rows: number } | null = null;
@@ -177,6 +178,9 @@ export function activateProviderTerminalPlugin(
             ...framePresenter!,
             renderFrame: (frame) => framePresenter!.render(frame),
           };
+      if (config.renderer?.delivery === "bytes" && (!presenter.writeOutput || !presenter.applySnapshot)) {
+        throw new Error("byte renderer requires output and snapshot completion contracts");
+      }
       const terminalSize = () => {
         presenter.fit?.();
         const measured = presenter.measure?.() ?? presenter.size();
@@ -204,6 +208,12 @@ export function activateProviderTerminalPlugin(
         presenter.renderFrame?.(value as ProviderFrame);
         return true;
       };
+      const applyFrameSnapshot = (value: Record<string, unknown>): boolean => {
+        const outputSequence = Number(value.outputSequence);
+        if (!Number.isSafeInteger(outputSequence) || outputSequence < 0 || !applyFrame(value.frame)) return false;
+        renderedSequence = outputSequence;
+        return true;
+      };
       const requireReply = (reply: Record<string, unknown>, operation: string) => {
         if (reply.ok !== true) {
           const code = typeof reply.code === "string" ? reply.code : "FAILED";
@@ -214,15 +224,16 @@ export function activateProviderTerminalPlugin(
           ? reply.data as Record<string, unknown> : {};
       };
       const renderLatest = async (): Promise<void> => {
-        if (rendering || stopped || requestedSequence <= renderedSequence) return;
+        if (rendering || stopped || requestedSequence <= (renderedSequence ?? -1)) return;
         rendering = true;
         try {
-          while (!stopped && requestedSequence > renderedSequence) {
+          while (!stopped && requestedSequence > (renderedSequence ?? -1)) {
             const sequence = requestedSequence;
             if (config.renderer?.delivery === "bytes") break;
             const response = await binding.recoveryRequest({ op: "frame", pane, afterSequence: sequence });
-            applyFrame(requireReply(response, "frame"));
-            renderedSequence = sequence;
+            if (!applyFrameSnapshot(requireReply(response, "frame"))) {
+              throw new Error("frame response has no exact output sequence");
+            }
           }
         } finally {
           rendering = false;
@@ -235,7 +246,7 @@ export function activateProviderTerminalPlugin(
         requestedSize = { cols, rows };
         const observed = requireReply(await binding.recoveryRequest({ op: "waitSize", pane, cols, rows, timeoutMs: 8000 }), "waitSize");
         if (stopped) return;
-        if (config.renderer?.delivery !== "bytes" && !applyFrame(requireReply(await binding.recoveryRequest({ op: "frame", pane }), "frame"))) {
+        if (config.renderer?.delivery !== "bytes" && !applyFrameSnapshot(requireReply(await binding.recoveryRequest({ op: "frame", pane }), "frame"))) {
           throw new Error("resize frame is invalid");
         }
         container.dispatchEvent(new CustomEvent("soksak:terminal-size", { detail: observed }));
@@ -246,14 +257,25 @@ export function activateProviderTerminalPlugin(
           failure: { code: "RESIZE_FAILED", message: String(error) }, fidelity: "unavailable",
         });
       };
+      const reportFrameFailure = (error: unknown) => {
+        if (stopped) return;
+        status.set("blocked", {
+          failure: { code: "FRAME_FAILED", message: String(error) }, fidelity: "unavailable",
+        });
+      };
       const resizeWorker = createTerminalResizeWorker(resizeSession, reportResizeFailure);
       const requestResize = () => resizeWorker.request();
       const attach = (opened: number) => {
         session = opened;
         output = binding.onData(session, (bytes, throughSeq) => {
-          if (config.renderer?.delivery === "bytes") { presenter.writeOutput?.(bytes); return; }
+          if (config.renderer?.delivery === "bytes") {
+            void presenter.writeOutput!(bytes).then(() => {
+              renderedSequence = Math.max(renderedSequence ?? 0, throughSeq);
+            }).catch(reportFrameFailure);
+            return;
+          }
           requestedSequence = Math.max(requestedSequence, throughSeq);
-          void renderLatest();
+          void renderLatest().catch(reportFrameFailure);
         });
         writable = true;
         io = host.terminal?.registerIo?.(pane, {
@@ -297,6 +319,11 @@ export function activateProviderTerminalPlugin(
           throw new Error("rehydrate returned no frame or snapshot lease");
         }
         if (config.renderer?.delivery === "bytes") await presenter.applySnapshot!(restored, false);
+        const restoredSequence = Number(restored.uptoSeq);
+        if (!Number.isSafeInteger(restoredSequence) || restoredSequence < 0) {
+          throw new Error("rehydrate returned no exact output sequence");
+        }
+        renderedSequence = restoredSequence;
         status.set("applying-snapshot", {
           recoveryOutcome: "continued", fidelity: "complete",
         });
@@ -319,6 +346,11 @@ export function activateProviderTerminalPlugin(
           if (!presenter.applySnapshot) throw new Error("byte presenter cannot restore snapshots");
           await presenter.applySnapshot(data, true);
         } else if (!applyFrame(data.frame)) throw new Error("archived returned no frame");
+        const archivedSequence = Number(data.uptoSeq);
+        if (!Number.isSafeInteger(archivedSequence) || archivedSequence < 0) {
+          throw new Error("archived returned no exact output sequence");
+        }
+        renderedSequence = archivedSequence;
         writable = false;
         container.dataset.terminalOperation = "ready";
         status.set("archived", {
@@ -348,6 +380,7 @@ export function activateProviderTerminalPlugin(
         get session() { return session; },
         status,
         get requestedSize() { return requestedSize; },
+        get renderedOutputSequence() { return renderedSequence; },
         get writable() { return writable; },
         stop() {
           stopped = true;
@@ -418,6 +451,7 @@ export function activateProviderTerminalPlugin(
         pane: screen.pane, session: screen.session,
         hostPixels: { width: screen.presenter.root.clientWidth, height: screen.presenter.root.clientHeight },
         requested: screen.requestedSize, rendered: rendered.cols > 0 && rendered.rows > 0 ? rendered : null,
+        renderedOutputSequence: screen.renderedOutputSequence,
         operation: screen.presenter.root.dataset.terminalOperation ?? "unknown",
         diagnostics: await binding.diagnostics(),
       }),
@@ -503,6 +537,7 @@ export function activateProviderTerminalPlugin(
         pane: screen.pane, session: screen.session,
         hostPixels: { width: screen.presenter.root.clientWidth, height: screen.presenter.root.clientHeight },
         requested: screen.requestedSize, rendered: rendered.cols > 0 && rendered.rows > 0 ? rendered : null,
+        renderedOutputSequence: screen.renderedOutputSequence,
         operation: screen.presenter.root.dataset.terminalOperation ?? "unknown",
         diagnostics: await binding.diagnostics(),
       }),
