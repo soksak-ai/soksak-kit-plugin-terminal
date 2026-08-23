@@ -26,4 +26,14 @@ describe("provider frame presenter", () => {
     ]] });
     await expect(found).resolves.toContain("ready");
   });
+
+  it("measures the requested grid independently of the last rendered frame", () => {
+    const root = document.createElement("div");
+    Object.defineProperty(root, "clientWidth", { value: 432 });
+    Object.defineProperty(root, "clientHeight", { value: 384 });
+    const presenter = createProviderFramePresenter(root, vi.fn());
+    presenter.render({ cols: 91, rows: 29, cursor: [0, 0], alt_active: false, lines: [] });
+    expect(presenter.size()).toEqual({ cols: 91, rows: 29 });
+    expect(presenter.measure()).toEqual({ cols: 54, rows: 24 });
+  });
 });

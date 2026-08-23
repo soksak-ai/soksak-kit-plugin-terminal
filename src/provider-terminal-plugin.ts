@@ -60,6 +60,7 @@ export interface ProviderTerminalPluginConfig {
 export interface TerminalPresenter {
   root: HTMLElement;
   size(): { cols: number; rows: number };
+  measure?(): { cols: number; rows: number };
   fit?(): void;
   renderFrame?(frame: ProviderFrame): void;
   applySnapshot?(snapshot: Record<string, unknown>, archived: boolean): Promise<void> | void;
@@ -177,7 +178,7 @@ export function activateProviderTerminalPlugin(
           };
       const terminalSize = () => {
         presenter.fit?.();
-        const measured = presenter.size();
+        const measured = presenter.measure?.() ?? presenter.size();
         if (measured.cols > 0 && measured.rows > 0) return measured;
         return {
           cols: Math.max(1, Math.floor(container.clientWidth / 8)),

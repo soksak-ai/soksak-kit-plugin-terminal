@@ -5,6 +5,7 @@ export interface ProviderFramePresenter {
   root: HTMLElement; screen: HTMLElement; input: HTMLTextAreaElement;
   render(frame: ProviderFrame): void; read(lines?: number): string;
   size(): { cols: number; rows: number };
+  measure(): { cols: number; rows: number };
   waitForText(contains: string, timeoutMs: number): Promise<string>;
   focus(): boolean; dispose(): void;
 }
@@ -68,6 +69,10 @@ export function createProviderFramePresenter(
     },
     read(lines) { return lines && lines > 0 ? text.split("\n").slice(-lines).join("\n") : text; },
     size: () => ({ ...size }),
+    measure: () => ({
+      cols: Math.max(1, Math.floor(container.clientWidth / 8)),
+      rows: Math.max(1, Math.floor(container.clientHeight / 16)),
+    }),
     waitForText(contains, timeoutMs) {
       if (text.includes(contains)) return Promise.resolve(text);
       return new Promise((resolve, reject) => {
