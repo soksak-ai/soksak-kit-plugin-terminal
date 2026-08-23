@@ -505,6 +505,7 @@ export function activateProviderTerminalPlugin(
     contains: { type: "string", description: { en: "Screen text", ko: "화면 텍스트" } },
     cols: { type: "number", description: { en: "Exact terminal columns", ko: "정확한 터미널 열 수" } },
     colsLessThan: { type: "number", description: { en: "Terminal columns below this value", ko: "이 값보다 작은 터미널 열 수" } },
+    colsGreaterThan: { type: "number", description: { en: "Terminal columns above this value", ko: "이 값보다 큰 터미널 열 수" } },
     rows: { type: "number", description: { en: "Exact terminal rows", ko: "정확한 터미널 행 수" } },
     view: viewParam,
   }, async (params, context) => {
@@ -520,6 +521,7 @@ export function activateProviderTerminalPlugin(
       size: {
         ...(typeof params.cols === "number" ? { cols: params.cols } : {}),
         ...(typeof params.colsLessThan === "number" ? { colsLessThan: params.colsLessThan } : {}),
+        ...(typeof params.colsGreaterThan === "number" ? { colsGreaterThan: params.colsGreaterThan } : {}),
         ...(typeof params.rows === "number" ? { rows: params.rows } : {}),
       },
       waitForSize: (condition, limit) => waitForTerminalSize(

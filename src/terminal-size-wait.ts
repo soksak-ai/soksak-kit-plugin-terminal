@@ -1,6 +1,7 @@
 export interface TerminalSizeCondition {
   cols?: number;
   colsLessThan?: number;
+  colsGreaterThan?: number;
   rows?: number;
 }
 
@@ -13,6 +14,7 @@ export function waitForTerminalSize(
   const matches = (size: { cols: number; rows: number }) =>
     (condition.cols === undefined || size.cols === condition.cols)
     && (condition.colsLessThan === undefined || size.cols < condition.colsLessThan)
+    && (condition.colsGreaterThan === undefined || size.cols > condition.colsGreaterThan)
     && (condition.rows === undefined || size.rows === condition.rows);
   const initial = current();
   if (matches(initial)) return Promise.resolve(initial);

@@ -17,4 +17,12 @@ describe("terminal size wait", () => {
     root.dispatchEvent(new CustomEvent("soksak:terminal-size", { detail: { cols: 54, rows: 24 } }));
     await expect(waiting).resolves.toEqual({ cols: 54, rows: 24 });
   });
+
+  it("waits for columns to grow beyond the narrow boundary", async () => {
+    const root = document.createElement("div");
+    const waiting = waitForTerminalSize(root, { colsGreaterThan: 54 }, 1000, () => ({ cols: 54, rows: 24 }));
+    root.dispatchEvent(new CustomEvent("soksak:terminal-size", { detail: { cols: 54, rows: 24 } }));
+    root.dispatchEvent(new CustomEvent("soksak:terminal-size", { detail: { cols: 92, rows: 24 } }));
+    await expect(waiting).resolves.toEqual({ cols: 92, rows: 24 });
+  });
 });

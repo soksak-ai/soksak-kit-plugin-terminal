@@ -9,8 +9,8 @@ export interface TerminalConditionWaitOptions {
   contains?: string;
   timeoutMs: number;
   waitForText(contains: string, timeoutMs: number): Promise<string>;
-  size?: { cols?: number; colsLessThan?: number; rows?: number };
-  waitForSize?(condition: { cols?: number; colsLessThan?: number; rows?: number }, timeoutMs: number): Promise<{ cols: number; rows: number }>;
+  size?: { cols?: number; colsLessThan?: number; colsGreaterThan?: number; rows?: number };
+  waitForSize?(condition: { cols?: number; colsLessThan?: number; colsGreaterThan?: number; rows?: number }, timeoutMs: number): Promise<{ cols: number; rows: number }>;
 }
 
 export async function waitForTerminalConditions(
@@ -22,7 +22,7 @@ export async function waitForTerminalConditions(
     ? await options.waitForText(options.contains, remaining())
     : undefined;
   const hasSizeCondition = options.size
-    && (options.size.cols !== undefined || options.size.colsLessThan !== undefined || options.size.rows !== undefined);
+    && (options.size.cols !== undefined || options.size.colsLessThan !== undefined || options.size.colsGreaterThan !== undefined || options.size.rows !== undefined);
   const size = hasSizeCondition && options.size && options.waitForSize
     ? await options.waitForSize(options.size, remaining())
     : undefined;
