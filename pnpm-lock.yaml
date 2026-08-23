@@ -386,7 +386,7 @@ packages:
     os: [win32]
 
   '@soksak/soksak-contract-plugin-terminal@https://codeload.github.com/soksak-ai/soksak-contract-plugin-terminal/tar.gz/39fe76a56b520f15ba8256620b3b05d89ff34a9d':
-    resolution: {tarball: https://codeload.github.com/soksak-ai/soksak-contract-plugin-terminal/tar.gz/39fe76a56b520f15ba8256620b3b05d89ff34a9d}
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/soksak-ai/soksak-contract-plugin-terminal/tar.gz/39fe76a56b520f15ba8256620b3b05d89ff34a9d}
     version: 0.0.3
 
   '@types/chai@5.2.3':

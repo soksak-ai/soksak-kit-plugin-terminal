@@ -15,8 +15,12 @@ test("repository owns public metadata", () => {
     "git+https://github.com/soksak-ai/soksak-kit-plugin-terminal.git",
   );
   const kit = JSON.parse(readFileSync(join(root, "kit.json"), "utf8"));
-  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.10" });
+  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.11" });
   assert.equal(pkg.version, kit.version);
+  assert.equal(pkg.engines.node, "26.7.0");
+  assert.equal(pkg.packageManager, "pnpm@11.22.0");
+  assert.equal("pnpm" in pkg, false);
+  assert.match(readFileSync(join(root, "pnpm-workspace.yaml"), "utf8"), /allowBuilds:\n  esbuild: true/);
   const releaseFiles = JSON.parse(readFileSync(join(root, "release-files.json"), "utf8"));
   assert.ok(releaseFiles.includes("kit.json"));
   assert.ok(releaseFiles.includes("src/index.ts"));
@@ -25,6 +29,8 @@ test("repository owns public metadata", () => {
   assert.ok(releaseFiles.includes("src/terminal-resize-status.ts"));
   assert.ok(releaseFiles.includes("src/terminal-layout-observer.ts"));
   const workflow = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
+  assert.match(workflow, /node-version: "26\.7\.0"/);
+  assert.match(workflow, /version: "11\.22\.0"/);
   assert.match(workflow, /soksak-spec\n\s+ref: 418d6064fcdc5885be1ff73fd898fd7a0f778a0f/);
   assert.match(workflow, /owner-enforced immutable releases must be enabled/);
 });
