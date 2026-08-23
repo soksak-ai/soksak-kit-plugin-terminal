@@ -27,14 +27,14 @@ export interface TerminalSessionBinding {
   detach(session: number): void;
   onData(session: number, callback: (bytes: Uint8Array, throughSeq: number) => void): { dispose(): void };
   paneAlive(paneId: string): Promise<boolean>;
-  providerRequest(request: Record<string, unknown>): Promise<Record<string, unknown>>;
-  diagnostics(): Promise<{ pty: Record<string, unknown>; provider: Record<string, unknown> }>;
+  recoveryRequest(request: Record<string, unknown>): Promise<Record<string, unknown>>;
+  diagnostics(): Promise<{ pty: Record<string, unknown>; recovery: Record<string, unknown> }>;
   closeWindow(windowLabel: string): Promise<void>;
 }
 
 export interface TerminalSessionBindingOptions {
   ptySidecar: string;
-  providerSidecar: string;
+  recoverySidecar: string;
   checkpointKey?: string;
   onOperation?: (operation: string) => void;
 }
@@ -55,11 +55,11 @@ export function createTerminalSessionBinding(
   };
   let ptyPromise: Promise<TerminalSidecarChannel> | null = null;
   const pty = () => (ptyPromise ??= host.sidecar.open(options.ptySidecar));
-  let providerPromise: Promise<TerminalSidecarChannel> | null = null;
-  const provider = () => (providerPromise ??= (async () => {
+  let recoveryPromise: Promise<TerminalSidecarChannel> | null = null;
+  const recovery = () => (recoveryPromise ??= (async () => {
     const key = options.checkpointKey ?? "terminal-checkpoint-key-v1";
-    options.onOperation?.("opening-provider");
-    return host.sidecar.open(options.providerSidecar, {
+    options.onOperation?.("opening-recovery");
+    return host.sidecar.open(options.recoverySidecar, {
       generatedSecretEnv: { [KEY_ENV]: { key, bytes: 32 } },
     });
   })());
@@ -125,7 +125,7 @@ export function createTerminalSessionBinding(
       return { dispose: () => void readers.get(session)?.delete(callback) };
     },
     async paneAlive(paneId) { return answer(await (await pty()).send(request("pty.pane", { paneId }))).held === true; },
-    async providerRequest(value) {
+    async recoveryRequest(value) {
       const operation = typeof value.op === "string" ? value.op : "";
       const commands: Record<string, string> = {
         prepareSession: "terminal.prepareSession", ensureSession: "terminal.ensureSession",
@@ -137,20 +137,20 @@ export function createTerminalSessionBinding(
       const command = commands[operation];
       if (!command) throw new Error(`unknown terminal recovery operation ${operation}`);
       const { op: _op, ...payload } = value;
-      const response = await (await provider()).send(request(command, { ...payload, window: host.windowLabel() }));
+      const response = await (await recovery()).send(request(command, { ...payload, window: host.windowLabel() }));
       if (response.ok !== true) return { ok: false, code: (response.result as { code?: string })?.code ?? "FAILED", message: response.error ?? "recovery request failed" };
       return { ok: true, code: "OK", data: answer(response) };
     },
     async diagnostics() {
-      const [ptyStatus, providerStatus] = await Promise.all([
+      const [ptyStatus, recoveryStatus] = await Promise.all([
         (async () => answer(await (await pty()).send(request("pty.status", {}))))(),
         (async () => {
-          const response = await this.providerRequest({ op: "status" });
+          const response = await this.recoveryRequest({ op: "status" });
           return response.ok === true && response.data && typeof response.data === "object"
             ? response.data as Record<string, unknown> : response;
         })(),
       ]);
-      return { pty: ptyStatus, provider: providerStatus };
+      return { pty: ptyStatus, recovery: recoveryStatus };
     },
     async closeWindow(windowLabel) { answer(await (await pty()).send(request("pty.closeWindow", { windowLabel }))); },
   };

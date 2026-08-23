@@ -11,7 +11,7 @@ describe("terminal resize status", () => {
           { session: 8, paneId: "pane-b", cols: 90, rows: 24, eventSequence: 2 },
           { session: 7, paneId: "pane-a", cols: 54, rows: 24, eventSequence: 3 },
         ] },
-        provider: { sessions: [
+        recovery: { sessions: [
           { pane: "pane-b", cols: 90, rows: 24, eventSequence: 2 },
           { pane: "pane-a", cols: 54, rows: 24, eventSequence: 3 },
         ] },
@@ -27,7 +27,7 @@ describe("terminal resize status", () => {
   it("reports unavailable boundaries as null", () => {
     expect(terminalResizeStatus({
       pane: "pane", session: 0, hostPixels: { width: 0, height: 0 }, requested: null,
-      rendered: null, operation: "closed", diagnostics: { pty: {}, provider: {} },
+      rendered: null, operation: "closed", diagnostics: { pty: {}, recovery: {} },
     })).toEqual({
       hostPixels: { width: 0, height: 0 }, requested: null, pty: null, recovery: null,
       rendered: null, operation: "closed",

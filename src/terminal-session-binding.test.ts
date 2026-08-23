@@ -11,7 +11,7 @@ describe("shared terminal session binding", () => {
       windowLabel: () => "window-a",
       commands: { execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
       sidecar: { open: async () => channel },
-    }, { ptySidecar: "pty", providerSidecar: "terminal-vt100" });
+    }, { ptySidecar: "pty", recoverySidecar: "recovery" });
 
     await expect(binding.write(9, "x")).rejects.toThrow("sidecar refused request");
   });
@@ -40,13 +40,13 @@ describe("shared terminal session binding", () => {
       windowLabel: () => "window-a",
       commands: { execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
       sidecar: { open: async (name, opts) => { opens.push([name, opts]); return name === "pty" ? pty : provider; } },
-    }, { ptySidecar: "pty", providerSidecar: "terminal-kitty" });
+    }, { ptySidecar: "pty", recoverySidecar: "recovery" });
 
     const session = await binding.open("pane-a", 80, 24, "none", "observer-a");
     onBytes!(new Uint8Array([65, 66, 67]));
     const received: number[] = [];
     binding.onData(session, (bytes) => received.push(...bytes));
-    await binding.providerRequest({ op: "status" });
+    await binding.recoveryRequest({ op: "status" });
     await binding.diagnostics();
     await Promise.resolve();
 
@@ -55,7 +55,7 @@ describe("shared terminal session binding", () => {
       .toMatchObject({ args: { request: { observerToken: "observer-a", shell: "/bin/zsh" } } });
     expect(sent.find((value) => value.command === "pty.ack"))
       .toMatchObject({ args: { request: { session: 9, throughSeq: 44 } } });
-    expect(opens).toContainEqual(["terminal-kitty", {
+    expect(opens).toContainEqual(["recovery", {
       generatedSecretEnv: {
         SOKSAK_TERMINAL_CHECKPOINT_KEY: { key: "terminal-checkpoint-key-v1", bytes: 32 },
       },

@@ -7,7 +7,7 @@ interface ResizeStatusInput {
   requested: TerminalSize | null;
   rendered: TerminalSize | null;
   operation: string;
-  diagnostics: { pty: Record<string, unknown>; provider: Record<string, unknown> };
+  diagnostics: { pty: Record<string, unknown>; recovery: Record<string, unknown> };
 }
 
 export function terminalResizeStatus(input: ResizeStatusInput): TerminalResizeStatus {
@@ -16,7 +16,7 @@ export function terminalResizeStatus(input: ResizeStatusInput): TerminalResizeSt
     requested: input.requested,
     pty: findSize(input.diagnostics.pty, (session) =>
       session.session === input.session && session.paneId === input.pane),
-    recovery: findSize(input.diagnostics.provider, (session) => session.pane === input.pane),
+    recovery: findSize(input.diagnostics.recovery, (session) => session.pane === input.pane),
     rendered: input.rendered,
     operation: input.operation,
   };

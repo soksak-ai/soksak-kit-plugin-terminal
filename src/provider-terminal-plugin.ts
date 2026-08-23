@@ -50,7 +50,7 @@ export interface ProviderTerminalPluginHost extends TerminalSessionHost {
 export interface ProviderTerminalPluginConfig {
   pluginId: string;
   engineId: string;
-  providerSidecar: string;
+  recoverySidecar: string;
   programId: string;
   renderer?: TerminalRendererAdapter;
   extensions?: TerminalCommandExtension[];
@@ -108,7 +108,7 @@ export function activateProviderTerminalPlugin(
   const screens = new Map<string, MountedScreen>();
   const binding = createTerminalSessionBinding(host, {
     ptySidecar: "pty",
-    providerSidecar: config.providerSidecar,
+    recoverySidecar: config.recoverySidecar,
     onOperation(operation) {
       for (const screen of screens.values()) {
         screen.presenter.root.dataset.terminalOperation = operation;
@@ -218,7 +218,7 @@ export function activateProviderTerminalPlugin(
           while (!stopped && requestedSequence > renderedSequence) {
             const sequence = requestedSequence;
             if (config.renderer?.delivery === "bytes") break;
-            const response = await binding.providerRequest({ op: "frame", pane, afterSequence: sequence });
+            const response = await binding.recoveryRequest({ op: "frame", pane, afterSequence: sequence });
             applyFrame(requireReply(response, "frame"));
             renderedSequence = sequence;
           }
@@ -231,9 +231,9 @@ export function activateProviderTerminalPlugin(
         const { cols, rows } = terminalSize();
         await binding.resize(session, cols, rows);
         requestedSize = { cols, rows };
-        const observed = requireReply(await binding.providerRequest({ op: "waitSize", pane, cols, rows, timeoutMs: 8000 }), "waitSize");
+        const observed = requireReply(await binding.recoveryRequest({ op: "waitSize", pane, cols, rows, timeoutMs: 8000 }), "waitSize");
         if (stopped) return;
-        if (config.renderer?.delivery !== "bytes" && !applyFrame(requireReply(await binding.providerRequest({ op: "frame", pane }), "frame"))) {
+        if (config.renderer?.delivery !== "bytes" && !applyFrame(requireReply(await binding.recoveryRequest({ op: "frame", pane }), "frame"))) {
           throw new Error("resize frame is invalid");
         }
         container.dispatchEvent(new CustomEvent("soksak:terminal-size", { detail: observed }));
@@ -262,7 +262,7 @@ export function activateProviderTerminalPlugin(
       };
       const startFresh = async () => {
         container.dataset.terminalOperation = "preparing-observer";
-        const prepared = requireReply(await binding.providerRequest({
+        const prepared = requireReply(await binding.recoveryRequest({
           op: "prepareSession", pane, cols: 80, rows: 24,
         }), "prepareSession");
         const token = typeof prepared.observerToken === "string"
@@ -271,8 +271,8 @@ export function activateProviderTerminalPlugin(
         container.dataset.terminalOperation = "opening-pty";
         const opened = await binding.open(pane, 80, 24, "none", token);
         requestedSize = { cols: 80, rows: 24 };
-        container.dataset.terminalOperation = "subscribing-provider";
-        requireReply(await binding.providerRequest({
+        container.dataset.terminalOperation = "subscribing-recovery";
+        requireReply(await binding.recoveryRequest({
           op: "ensureSession", pane, cols: 80, rows: 24, observerToken: token,
         }), "ensureSession");
         attach(opened);
@@ -280,11 +280,11 @@ export function activateProviderTerminalPlugin(
         status.set("live", { recoveryOutcome: "fresh", fidelity: "complete" });
       };
       const startWarm = async () => {
-        container.dataset.terminalOperation = "subscribing-provider";
-        requireReply(await binding.providerRequest({
+        container.dataset.terminalOperation = "subscribing-recovery";
+        requireReply(await binding.recoveryRequest({
           op: "ensureSession", pane, cols: 80, rows: 24,
         }), "ensureSession");
-        const restored = requireReply(await binding.providerRequest({
+        const restored = requireReply(await binding.recoveryRequest({
           op: "rehydrate", pane,
         }), "rehydrate");
         const leaseToken = typeof restored.leaseToken === "string"
@@ -307,7 +307,7 @@ export function activateProviderTerminalPlugin(
       };
       const startArchived = async (): Promise<boolean> => {
         container.dataset.terminalOperation = "checking-archive";
-        const archived = await binding.providerRequest({ op: "archived", pane });
+        const archived = await binding.recoveryRequest({ op: "archived", pane });
         if (archived.ok !== true) {
           if (archived.code === "NOT_FOUND") return false;
           requireReply(archived, "archived");
@@ -424,7 +424,7 @@ export function activateProviderTerminalPlugin(
   register("archive", { view: viewParam }, async (params, context) => {
     const screen = target(params, context);
     if (!screen) return { archived: false };
-    const response = await binding.providerRequest({ op: "archive", pane: screen.pane });
+    const response = await binding.recoveryRequest({ op: "archive", pane: screen.pane });
     return response.ok === true ? { archived: true, ...(response.data as object) } : response;
   });
   register("wait", {
