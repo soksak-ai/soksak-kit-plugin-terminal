@@ -94,10 +94,9 @@ export function createTerminalSessionBinding(
       })));
       const session = Number(opened.session);
       const leaseToken = replay === "none" ? undefined : replay.leaseToken;
-      const stream = await channel.stream(request(
-        leaseToken ? "pty.attachLease" : "pty.attach",
-        leaseToken ? { token: leaseToken } : { session },
-      ), { onBytes(bytes) {
+      const beforeAnswer: Uint8Array[] = [];
+      let streamStarted = false;
+      const deliver = (bytes: Uint8Array) => {
         const throughSeq = (taken.get(session) ?? 0) + bytes.length;
         taken.set(session, throughSeq);
         void channel.send(request("pty.ack", { session, throughSeq })).catch(() => {});
@@ -105,11 +104,21 @@ export function createTerminalSessionBinding(
         if (subscribed?.size) subscribed.forEach((reader) => reader(bytes, throughSeq));
         else pending.set(session, [...(pending.get(session) ?? []), { bytes, throughSeq }]);
         host.terminal?.observe?.(paneId, bytes);
+      };
+      const stream = await channel.stream(request(
+        leaseToken ? "pty.attachLease" : "pty.attach",
+        leaseToken ? { token: leaseToken } : { session },
+      ), { onBytes(bytes) {
+        if (!streamStarted) { beforeAnswer.push(bytes.slice()); return; }
+        deliver(bytes);
       }});
       const attached = answer(stream.answer);
       const startSeq = Number(attached.startSeq);
       if (!Number.isSafeInteger(startSeq) || startSeq < 0) { stream.close.dispose(); throw new Error("pty.attach returned invalid startSeq"); }
-      taken.set(session, startSeq); streams.set(session, stream.close);
+      taken.set(session, startSeq);
+      streamStarted = true;
+      for (const bytes of beforeAnswer) deliver(bytes);
+      streams.set(session, stream.close);
       return session;
     },
     async write(session, data) { answer(await (await pty()).send(request("pty.write", { session, dataB64: encode(data) }))); },

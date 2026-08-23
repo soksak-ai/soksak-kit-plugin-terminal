@@ -17,3 +17,10 @@ renderer adapter로 제공할 수 있지만 수명 주기나 표준 명령을 �
 없습니다.
 
 플러그인은 자신의 매니페스트, 엔진 식별자, renderer adapter와 추가 명령을 소유합니다.
+
+## 스트림 순서 규칙
+
+PTY 출력은 하나의 절대 source sequence로 정렬합니다. 스트림 연결의 `startSeq`가 확정되기
+전에 도착한 바이트는 보관하며, 연결 응답 뒤 그 `startSeq`부터 도착 순서대로 정확히 한 번
+전달하고 ACK합니다. sequence 후퇴, 상대 좌표 ACK, 재시도, provider별 별도 스트림 경로는
+허용하지 않습니다.

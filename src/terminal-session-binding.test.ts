@@ -61,4 +61,37 @@ describe("shared terminal session binding", () => {
       },
     }]);
   });
+
+  it("anchors bytes delivered before the stream answer to its absolute start sequence", async () => {
+    const acknowledgements: number[] = [];
+    let onBytes: ((bytes: Uint8Array) => void) | undefined;
+    const channel: TerminalSidecarChannel = {
+      send: vi.fn(async (request) => {
+        if (request.command === "pty.open") return { ok: true, result: { data: { session: 9 } } };
+        if (request.command === "pty.ack") {
+          const args = request.args as { request: { throughSeq: number } };
+          acknowledgements.push(args.request.throughSeq);
+        }
+        return { ok: true, result: { data: {} } };
+      }),
+      stream: vi.fn(async (_request, handlers) => {
+        onBytes = handlers.onBytes;
+        handlers.onBytes(new Uint8Array([65, 66, 67]));
+        return { answer: { ok: true, result: { data: { startSeq: 41 } } }, close: { dispose() {} } };
+      }),
+    };
+    const binding = createTerminalSessionBinding({
+      windowLabel: () => "window-a",
+      commands: { execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
+      sidecar: { open: async () => channel },
+    }, { ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-vt100" });
+
+    const session = await binding.open("pane-a", 80, 24, "none");
+    const received: number[] = [];
+    binding.onData(session, (bytes) => received.push(...bytes));
+    onBytes!(new Uint8Array([68]));
+
+    expect(acknowledgements).toEqual([44, 45]);
+    expect(received).toEqual([65, 66, 67, 68]);
+  });
 });

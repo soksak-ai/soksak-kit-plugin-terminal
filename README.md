@@ -11,6 +11,14 @@ Status reports host pixels, requested size, PTY observation, recovery observatio
 Layout updates consume both `ResizeObserver` and the host's post-commit `layout.reflow` event. Both
 signals enter the same serial resize worker; no interval or retry path exists.
 
+## Stream sequence rule
+
+PTY output is ordered by one absolute source sequence. A stream attachment establishes its
+`startSeq` before any delivered byte may advance or acknowledge that sequence. Bytes received by
+the transport before the attachment answer are retained, then delivered once in arrival order from
+that exact `startSeq`. Sequence rollback, relative acknowledgements, retries, and provider-specific
+stream paths are forbidden.
+
 ## Verification
 
 ```sh
