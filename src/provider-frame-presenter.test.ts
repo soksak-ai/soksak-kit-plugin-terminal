@@ -22,7 +22,9 @@ describe("provider frame presenter", () => {
     const root = document.createElement("div"); document.body.append(root);
     const presenter = createProviderFramePresenter(root, vi.fn());
     presenter.render({ cols: 1, rows: 1, cursor: [0, 0], cursor_visible: true, alt_active: false, lines: [[]] });
-    presenter.screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    const down = new MouseEvent("mousedown", { bubbles: true, button: 0, cancelable: true });
+    expect(presenter.screen.dispatchEvent(down)).toBe(false);
+    expect(down.defaultPrevented).toBe(true);
     expect(document.activeElement).toBe(presenter.input);
     expect(presenter.input.dataset.focused).toBe("true");
     expect(presenter.screen.dataset.cursorActive).toBe("true");
