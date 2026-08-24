@@ -43,3 +43,8 @@ test("repository owns public metadata", () => {
   assert.doesNotMatch(workflow, /repository: soksak-ai\/soksak-spec/);
   assert.match(workflow, /owner-enforced immutable releases must be enabled/);
 });
+
+test("portable release includes the presentation status owner", () => {
+  const releaseFiles = JSON.parse(readFileSync(join(root, "release-files.json"), "utf8"));
+  assert.ok(releaseFiles.includes("src/terminal-presentation-status.ts"));
+});
