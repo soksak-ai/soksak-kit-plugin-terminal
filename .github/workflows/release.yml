@@ -40,6 +40,8 @@ jobs:
           pnpm typecheck
       - working-directory: component
         run: node ../spec-package/release-template/build-portable-release.mjs --commit "${{ github.sha }}" --out "$GITHUB_WORKSPACE/artifacts"
+      - working-directory: component
+        run: node scripts/portable-dependency-metadata.mjs "$GITHUB_WORKSPACE"/artifacts/*.tgz
       - id: release-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
         with:

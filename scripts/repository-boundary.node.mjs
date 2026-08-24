@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 import {
   assertPortableDependencyArchive,
@@ -77,6 +79,31 @@ test("source metadata refuses external local dependency topology", () => {
 });
 
 test("portable archive refuses embedded local dependency topology", () => {
-  const archive = process.env.SOKSAK_TEST_PORTABLE_ARCHIVE;
-  if (archive) assert.doesNotThrow(() => assertPortableDependencyArchive(archive));
+  const fixture = mkdtempSync(join(tmpdir(), "soksak-portable-dependency-"));
+  try {
+    const packaged = join(fixture, "package");
+    mkdirSync(packaged);
+    writeFileSync(join(packaged, "package.json"), JSON.stringify({ dependencies: { contract: "https://example.invalid/contract.tgz" } }));
+    writeFileSync(join(packaged, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    const clean = join(fixture, "clean.tgz");
+    assert.equal(spawnSync("tar", ["-czf", clean, "package"], { cwd: fixture }).status, 0);
+    assert.doesNotThrow(() => assertPortableDependencyArchive(clean));
+
+    writeFileSync(join(packaged, "package.json"), JSON.stringify({ dependencies: { contract: "file:../../../../../contract.tgz" } }));
+    writeFileSync(join(packaged, "pnpm-lock.yaml"), [
+      "lockfileVersion: '9.0'",
+      "importers:",
+      "  .:",
+      "    dependencies:",
+      "      contract:",
+      "        specifier: file:/tmp/contract.tgz",
+      "        version: file:../../../../tmp/contract.tgz",
+      "",
+    ].join("\n"));
+    const contaminated = join(fixture, "contaminated.tgz");
+    assert.equal(spawnSync("tar", ["-czf", contaminated, "package"], { cwd: fixture }).status, 0);
+    assert.throws(() => assertPortableDependencyArchive(contaminated), /external local dependency/);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });
