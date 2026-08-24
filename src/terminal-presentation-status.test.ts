@@ -1,0 +1,37 @@
+// @vitest-environment jsdom
+import { describe, expect, it } from "vitest";
+
+import { createTerminalPresentationStatus } from "./terminal-presentation-status";
+
+describe("terminal presentation status", () => {
+  it("measures render and accepted-input latency on separate axes", () => {
+    let wall = 100;
+    const root = document.createElement("div");
+    const screen = document.createElement("div");
+    screen.dataset.node = "terminal-screen";
+    screen.dataset.cursorVisible = "true";
+    screen.dataset.cursorActive = "false";
+    screen.dataset.cursorRow = "2";
+    screen.dataset.cursorColumn = "3";
+    const input = document.createElement("textarea");
+    input.dataset.node = "terminal-input";
+    root.append(screen, input);
+    const status = createTerminalPresentationStatus(root, "frame", () => wall);
+
+    status.markRendered(4);
+    status.markRendered(7);
+    status.markInputAccepted();
+    wall = 112;
+    status.markPtyWrite();
+
+    expect(status.current()).toMatchObject({
+      renderSequence: 2,
+      lastRenderDurationMs: 7,
+      maxRenderDurationMs: 7,
+      lastInputToPtyWriteMs: 12,
+      cursorVisible: true,
+      cursorRow: 2,
+      cursorColumn: 3,
+    });
+  });
+});
