@@ -362,10 +362,14 @@ describe("provider-backed terminal plugin", () => {
     let view: { mount(container: HTMLElement, context: unknown): void } | undefined;
     const commands = new Map<string, (params: Record<string, unknown>) => unknown>();
     const writes: unknown[] = [];
+    let writeCalls = 0;
+    let releaseFirstWrite!: () => void;
+    const firstWrite = new Promise<void>((resolve) => { releaseFirstWrite = resolve; });
     let emit: ((bytes: Uint8Array) => void) | undefined;
     const pty = {
       send: vi.fn(async (request: Record<string, unknown>) => {
         const command = request.command; writes.push(request);
+        if (command === "pty.write" && ++writeCalls === 1) await firstWrite;
         const data = command === "pty.open" ? { session: 4 } : command === "pty.pane" ? { held: false } : {};
         return { ok: true, result: { data } };
       }),
@@ -409,12 +413,16 @@ describe("provider-backed terminal plugin", () => {
     screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
     input.value = "x";
     input.dispatchEvent(new Event("input", { bubbles: true }));
-    await vi.waitFor(() => expect(writes).toContainEqual(expect.objectContaining({ command: "pty.write" })));
+    input.value = "y";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await vi.waitFor(() => expect(writeCalls).toBe(1));
+    releaseFirstWrite();
+    await vi.waitFor(() => expect(writeCalls).toBe(2));
     const afterInput = await commands.get("status")!({ view: "pane" }) as {
       presentation: Record<string, unknown>;
     };
     expect(afterInput.presentation).toMatchObject({
-      delivery: "frame", acceptedInputSequence: 1, ptyWriteSequence: 1,
+      delivery: "frame", acceptedInputSequence: 2, ptyWriteSequence: 2,
       focusedInput: true, cursorVisible: true, cursorActive: true,
       cursorRow: 0, cursorColumn: 2,
     });
