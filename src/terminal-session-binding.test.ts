@@ -92,9 +92,10 @@ describe("shared terminal session binding", () => {
     const received: number[] = [];
     binding.onData(session, (bytes) => received.push(...bytes));
     onBytes!(new Uint8Array([68]));
+    onBytes!(new Uint8Array([69]));
 
-    await vi.waitFor(() => expect(acknowledgements).toEqual([45]));
-    expect(received).toEqual([65, 66, 67, 68]);
+    await vi.waitFor(() => expect(acknowledgements).toEqual([44, 46]));
+    expect(received).toEqual([65, 66, 67, 68, 69]);
   });
 
   it("closes the byte stream before explicitly detaching its renderer generation", async () => {

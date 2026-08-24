@@ -67,6 +67,45 @@ export function createTerminalSessionBinding(
   const readers = new Map<number, Set<(bytes: Uint8Array, throughSeq: number) => void>>();
   const pending = new Map<number, Array<{ bytes: Uint8Array; throughSeq: number }>>();
   const taken = new Map<number, number>();
+  type AcknowledgementState = {
+    latest: number;
+    sent: number;
+    running: Promise<void> | null;
+    failure: unknown;
+  };
+  const acknowledgements = new Map<number, AcknowledgementState>();
+  const startAcknowledgement = (
+    channel: TerminalSidecarChannel,
+    session: number,
+    state: AcknowledgementState,
+  ) => {
+    if (state.running || state.failure || state.sent >= state.latest) return;
+    state.running = Promise.resolve().then(async () => {
+      while (state.sent < state.latest) {
+        const throughSeq = state.latest;
+        answer(await channel.send(request("pty.ack", { session, throughSeq })));
+        state.sent = throughSeq;
+      }
+    }).catch((error) => {
+      state.failure = error;
+    }).finally(() => {
+      state.running = null;
+      if (!state.failure && state.sent < state.latest) startAcknowledgement(channel, session, state);
+    });
+  };
+  const acknowledge = (channel: TerminalSidecarChannel, session: number, throughSeq: number) => {
+    const state = acknowledgements.get(session);
+    if (!state) return;
+    state.latest = Math.max(state.latest, throughSeq);
+    startAcknowledgement(channel, session, state);
+  };
+  const flushAcknowledgement = async (channel: TerminalSidecarChannel, session: number) => {
+    const state = acknowledgements.get(session);
+    if (!state) return;
+    startAcknowledgement(channel, session, state);
+    while (state.running) await state.running;
+    if (state.failure) throw state.failure;
+  };
   const encode = (text: string) => {
     let binary = "";
     for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
@@ -99,7 +138,7 @@ export function createTerminalSessionBinding(
       const deliver = (bytes: Uint8Array) => {
         const throughSeq = (taken.get(session) ?? 0) + bytes.length;
         taken.set(session, throughSeq);
-        void channel.send(request("pty.ack", { session, throughSeq })).catch(() => {});
+        acknowledge(channel, session, throughSeq);
         const subscribed = readers.get(session);
         if (subscribed?.size) subscribed.forEach((reader) => reader(bytes, throughSeq));
         else pending.set(session, [...(pending.get(session) ?? []), { bytes, throughSeq }]);
@@ -116,6 +155,7 @@ export function createTerminalSessionBinding(
       const startSeq = Number(attached.startSeq);
       if (!Number.isSafeInteger(startSeq) || startSeq < 0) { stream.close.dispose(); throw new Error("pty.attach returned invalid startSeq"); }
       taken.set(session, startSeq);
+      acknowledgements.set(session, { latest: startSeq, sent: startSeq, running: null, failure: null });
       streamStarted = true;
       for (const bytes of beforeAnswer) deliver(bytes);
       streams.set(session, stream.close);
@@ -168,10 +208,13 @@ export function createTerminalSessionBinding(
     const stream = streams.get(session);
     stream?.dispose();
     if (stream) await stream.settled;
-    answer(await (await pty()).send(request("pty.detachRenderer", { session })));
+    const channel = await pty();
+    await flushAcknowledgement(channel, session);
+    answer(await channel.send(request("pty.detachRenderer", { session })));
     streams.delete(session);
     readers.delete(session);
     pending.delete(session);
     taken.delete(session);
+    acknowledgements.delete(session);
   }
 }
