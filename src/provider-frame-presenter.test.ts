@@ -48,6 +48,15 @@ describe("provider frame presenter", () => {
     expect(spans[2].style.color).toBe("rgb(238, 238, 236)");
   });
 
+  it("publishes the cursor and selection roles on the public screen node", () => {
+    const presenter = createProviderFramePresenter(document.createElement("div"), vi.fn());
+    expect(presenter.screen.style.color).toBe("var(--fg)");
+    expect(presenter.screen.style.backgroundColor).toBe("var(--card)");
+    expect(presenter.screen.style.getPropertyValue("--soksak-terminal-cursor")).toBe("var(--acc)");
+    expect(presenter.screen.style.getPropertyValue("--soksak-terminal-cursor-accent")).toBe("var(--card)");
+    expect(presenter.screen.style.getPropertyValue("--soksak-terminal-selection-background")).toBe("var(--fg3)");
+  });
+
   it("maps bold base foreground colors to the canonical bright palette", () => {
     const presenter = createProviderFramePresenter(document.createElement("div"), vi.fn());
     presenter.render({ cols: 2, rows: 1, cursor: [0, 0], cursor_visible: false, alt_active: false, lines: [[
