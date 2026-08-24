@@ -55,4 +55,29 @@ describe("terminal condition wait", () => {
     resolveSize({ cols: 54, rows: 24 });
     await expect(waiting).resolves.toMatchObject({ phase: "live", cols: 54, rows: 24 });
   });
+
+  it("requires cursor and focus readiness from status publication", async () => {
+    const root = document.createElement("div");
+    let presentation = closedTerminalPresentation("frame", theme);
+    const status = createTerminalStatusController({
+      root, pluginId: "plugin", engineId: "engine", rendererId: "renderer",
+      rendererProfile: "web", publish: vi.fn(), presentation: () => presentation,
+    });
+    status.set("live", { recoveryOutcome: "fresh", fidelity: "complete" });
+    let settled = false;
+    const waiting = waitForTerminalConditions({
+      status, phase: "live", timeoutMs: 1000, waitForText: vi.fn(),
+      presentation: { focusedInput: true, cursorVisible: true, cursorActive: true },
+    }).then((answer) => { settled = true; return answer; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    presentation = {
+      ...presentation, focusedInput: true, cursorVisible: true, cursorActive: true,
+      cursorRow: 0, cursorColumn: 0,
+    };
+    status.refresh();
+    await expect(waiting).resolves.toMatchObject({
+      presentation: { focusedInput: true, cursorVisible: true, cursorActive: true },
+    });
+  });
 });
