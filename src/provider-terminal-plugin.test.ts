@@ -15,6 +15,7 @@ describe("provider-backed terminal plugin", () => {
     const commands = new Map<string, Record<string, unknown>>();
     const snapshots: Record<string, unknown>[] = [];
     const output: Uint8Array[] = [];
+    let emit: ((bytes: Uint8Array) => void) | undefined;
     let rendered: ((durationMs: number) => void) | undefined;
     const channel = {
       send: vi.fn(async (request: Record<string, unknown>) => {
@@ -28,6 +29,7 @@ describe("provider-backed terminal plugin", () => {
         return { ok: true, result: { data } };
       }),
       stream: vi.fn(async (_request: unknown, handlers: { onBytes(bytes: Uint8Array): void }) => {
+        emit = handlers.onBytes;
         handlers.onBytes(new Uint8Array([65]));
         return { answer: { ok: true, result: { data: { startSeq: 0 } } }, close: settledClose() };
       }),
@@ -65,6 +67,11 @@ describe("provider-backed terminal plugin", () => {
     await vi.waitFor(() => expect(root.dataset.terminalPhase).toBe("live"));
     expect([...commands.keys()].sort()).toEqual([...TERMINAL_PLUGIN_COMMANDS].sort());
     expect(output).toEqual([new Uint8Array([65])]);
+    output.length = 0;
+    emit!(new Uint8Array([66]));
+    emit!(new Uint8Array([67]));
+    emit!(new Uint8Array([68]));
+    await vi.waitFor(() => expect(output).toEqual([new Uint8Array([66, 67, 68])]));
     expect(snapshots).toEqual([]);
     const status = await (commands.get("status")!.handler as (
       params: Record<string, unknown>, context: { pane: string },
