@@ -296,6 +296,7 @@ export function activateProviderTerminalPlugin(
           scheduleRenderLatest();
         }
       };
+      let requestResize = () => {};
       const resizeSession = async () => {
         if (!session || container.clientWidth <= 0 || container.clientHeight <= 0) return;
         const { cols, rows } = terminalSize();
@@ -307,6 +308,8 @@ export function activateProviderTerminalPlugin(
           throw new Error("resize frame is invalid");
         }
         container.dispatchEvent(new CustomEvent("soksak:terminal-size", { detail: observed }));
+        const latest = terminalSize();
+        if (!stopped && (latest.cols !== cols || latest.rows !== rows)) requestResize();
       };
       const reportResizeFailure = (error: unknown) => {
         if (stopped) return;
@@ -315,7 +318,7 @@ export function activateProviderTerminalPlugin(
         });
       };
       const resizeWorker = createTerminalResizeWorker(resizeSession, reportResizeFailure);
-      const requestResize = () => resizeWorker.request();
+      requestResize = () => resizeWorker.request();
       const attach = (opened: number) => {
         session = opened;
         output = binding.onData(session, (bytes, throughSeq) => {
