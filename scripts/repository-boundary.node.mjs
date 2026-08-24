@@ -45,7 +45,7 @@ test("repository owns public metadata", () => {
   assert.match(workflow, /make verify/);
   assert.doesNotMatch(workflow, /soksak-ai-plugin-spec-\d+[.]\d+[.]\d+[.]tgz/);
   assert.doesNotMatch(workflow, /repository: soksak-ai\/soksak-spec/);
-  assert.match(workflow, /owner-enforced immutable releases must be enabled/);
+  assert.match(workflow, /immutable-releases.*enforced_by_owner/);
 });
 
 test("portable release includes the presentation status owner", () => {

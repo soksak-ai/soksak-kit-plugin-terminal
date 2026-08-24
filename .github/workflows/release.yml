@@ -1,15 +1,20 @@
 name: release
-
 on:
   workflow_dispatch:
-
+    inputs:
+      spec_url:
+        description: Exact immutable soksak-spec package URL from the release train
+        required: true
+        type: string
+      spec_sha256:
+        description: SHA-256 of the exact soksak-spec package
+        required: true
+        type: string
 permissions:
   contents: read
-
 concurrency:
   group: release-${{ github.repository }}
   cancel-in-progress: false
-
 jobs:
   release:
     if: github.ref == 'refs/heads/main'
@@ -20,24 +25,30 @@ jobs:
         with:
           path: component
           persist-credentials: false
-      - name: Install the immutable public spec package
+      - name: Inject the exact spec validation tool
         run: |
+          case "${{ inputs.spec_url }}" in
+            https://github.com/soksak-ai/soksak-spec/releases/download/v*/soksak-ai-plugin-spec-*.tgz) ;;
+            *) echo "spec_url is not an immutable soksak-spec release asset" >&2; exit 1 ;;
+          esac
+          digest="${{ inputs.spec_sha256 }}"
+          test "${#digest}" -eq 64
+          case "$digest" in *[!a-f0-9]*) echo "spec_sha256 is invalid" >&2; exit 1 ;; esac
           mkdir -p spec-package
-          curl -fsSL https://github.com/soksak-ai/soksak-spec/releases/download/v0.0.29/soksak-ai-plugin-spec-0.0.29.tgz -o soksak-spec.tgz
-          echo "f3311f6e20069667486e753e8669e7f7787f197f47e4a94e14207a066c2db32c  soksak-spec.tgz" | sha256sum -c -
+          curl -fsSL "${{ inputs.spec_url }}" -o soksak-spec.tgz
+          test "$(sha256sum soksak-spec.tgz | awk '{print $1}')" = "$digest"
           tar -xzf soksak-spec.tgz -C spec-package --strip-components=1
           test -z "$(find spec-package -type l -print -quit)"
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version-file: component/package.json
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
         with:
           package_json_file: component/package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: component/.node-version
+          cache: pnpm
+          cache-dependency-path: component/pnpm-lock.yaml
       - working-directory: component
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm test
-          pnpm typecheck
+        run: make verify
       - working-directory: component
         run: node ../spec-package/release-template/build-portable-release.mjs --commit "${{ github.sha }}" --out "$GITHUB_WORKSPACE/artifacts"
       - id: release-token
@@ -52,5 +63,5 @@ jobs:
           SOKSAK_RELEASE_TOKEN: ${{ steps.release-token.outputs.token }}
           GH_TOKEN: ${{ steps.release-token.outputs.token }}
         run: |
-          test "$(gh api repos/${{ github.repository }}/immutable-releases --jq '.enabled and .enforced_by_owner')" = true || { echo "owner-enforced immutable releases must be enabled before tagging" >&2; exit 1; }
+          test "$(gh api repos/${{ github.repository }}/immutable-releases --jq '.enabled and .enforced_by_owner')" = true
           node ../spec-package/release-template/publish-canonical-release.mjs --repository "${{ github.repository }}" --commit "${{ github.sha }}" --artifacts "$GITHUB_WORKSPACE/artifacts" --manifest "$GITHUB_WORKSPACE/artifacts/release.json"
