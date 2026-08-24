@@ -1,4 +1,5 @@
 import {
+  TERMINAL_ANSI_PALETTE,
   TERMINAL_THEME_CONTRACT,
   type TerminalPresentationTheme,
 } from "@soksak/soksak-contract-plugin-terminal";
@@ -22,6 +23,9 @@ export function bindTerminalThemeSurface(screen: HTMLElement): void {
     TERMINAL_THEME_CONTRACT.properties.selectionBackground,
     cssVariable(TERMINAL_THEME_CONTRACT.tokens.selectionBackground),
   );
+  TERMINAL_ANSI_PALETTE.forEach((color, index) => {
+    screen.style.setProperty(`${TERMINAL_THEME_CONTRACT.properties.ansiPrefix}${index}`, color);
+  });
 }
 
 export function readTerminalTheme(root: HTMLElement): TerminalPresentationTheme {

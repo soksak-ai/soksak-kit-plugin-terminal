@@ -16,6 +16,9 @@ five semantic roles from the host's public tokens, applies them to `terminal-scr
 resolved values through `presentation.theme`, and exposes cursor, cursor-accent, and selection as
 the contract-declared CSS properties. Frame renderers and byte-renderer adapters consume this same
 implementation; a plugin must not keep a private terminal theme map.
+The public screen also carries all 256 contract palette entries as indexed CSS custom properties,
+allowing installed-product parity checks to read computed style without treating screenshots as an
+automated oracle.
 
 ## Stream sequence rule
 
