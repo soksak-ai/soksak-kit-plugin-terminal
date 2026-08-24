@@ -34,4 +34,25 @@ describe("terminal presentation status", () => {
       cursorColumn: 3,
     });
   });
+
+  it("records the exact focus acquisition edge", () => {
+    let wall = 200;
+    const root = document.createElement("div");
+    const input = document.createElement("textarea");
+    input.dataset.node = "terminal-input";
+    root.append(input);
+    const status = createTerminalPresentationStatus(root, "frame", () => wall) as ReturnType<typeof createTerminalPresentationStatus> & {
+      markFocused(focused: boolean): void;
+    };
+
+    expect(typeof status.markFocused).toBe("function");
+    input.focus();
+    wall = 207;
+    status.markFocused(true);
+    expect(status.current()).toMatchObject({
+      focusedInput: true,
+      focusSequence: 1,
+      lastFocusedAtUnixMs: 207,
+    });
+  });
 });
