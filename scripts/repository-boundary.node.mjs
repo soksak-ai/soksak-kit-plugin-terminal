@@ -52,3 +52,9 @@ test("portable release includes the presentation status owner", () => {
   const releaseFiles = JSON.parse(readFileSync(join(root, "release-files.json"), "utf8"));
   assert.ok(releaseFiles.includes("src/terminal-presentation-status.ts"));
 });
+
+test("preflight judges the effective repository-selected pnpm", () => {
+  const source = readFileSync(join(root, "scripts/check-build-environment.sh"), "utf8");
+  assert.match(source, /pnpm_actual=.*pnpm --version/);
+  assert.doesNotMatch(source, /pnpm_executable|pnpmExecutable/);
+});
