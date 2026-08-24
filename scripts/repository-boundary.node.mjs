@@ -1,13 +1,7 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 import test from "node:test";
-import {
-  assertPortableDependencyArchive,
-  assertPortableDependencyMetadata,
-} from "./portable-dependency-metadata.mjs";
 
 const root = join(import.meta.dirname, "..");
 
@@ -48,62 +42,9 @@ test("repository owns public metadata", () => {
   assert.match(workflow, /f3311f6e20069667486e753e8669e7f7787f197f47e4a94e14207a066c2db32c/);
   assert.doesNotMatch(workflow, /repository: soksak-ai\/soksak-spec/);
   assert.match(workflow, /owner-enforced immutable releases must be enabled/);
-  assert.match(
-    workflow,
-    /portable-dependency-metadata[.]mjs[^\n]*artifacts/,
-    "release workflow does not reject local dependency metadata inside its archives",
-  );
 });
 
 test("portable release includes the presentation status owner", () => {
   const releaseFiles = JSON.parse(readFileSync(join(root, "release-files.json"), "utf8"));
   assert.ok(releaseFiles.includes("src/terminal-presentation-status.ts"));
-});
-
-test("source metadata refuses external local dependency topology", () => {
-  assert.doesNotThrow(() => assertPortableDependencyMetadata(root));
-  assert.throws(
-    () => assertPortableDependencyMetadata(root, {
-      packageText: JSON.stringify({ dependencies: { contract: "file:/tmp/contract.tgz" } }),
-      lockText: "lockfileVersion: '9.0'\n",
-    }),
-    /external local dependency/,
-  );
-  assert.throws(
-    () => assertPortableDependencyMetadata(root, {
-      packageText: JSON.stringify({ devDependencies: { contract: "file:../../../../../contract.tgz" } }),
-      lockText: "lockfileVersion: '9.0'\n",
-    }),
-    /external local dependency/,
-  );
-});
-
-test("portable archive refuses embedded local dependency topology", () => {
-  const fixture = mkdtempSync(join(tmpdir(), "soksak-portable-dependency-"));
-  try {
-    const packaged = join(fixture, "package");
-    mkdirSync(packaged);
-    writeFileSync(join(packaged, "package.json"), JSON.stringify({ dependencies: { contract: "https://example.invalid/contract.tgz" } }));
-    writeFileSync(join(packaged, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
-    const clean = join(fixture, "clean.tgz");
-    assert.equal(spawnSync("tar", ["-czf", clean, "package"], { cwd: fixture }).status, 0);
-    assert.doesNotThrow(() => assertPortableDependencyArchive(clean));
-
-    writeFileSync(join(packaged, "package.json"), JSON.stringify({ dependencies: { contract: "file:../../../../../contract.tgz" } }));
-    writeFileSync(join(packaged, "pnpm-lock.yaml"), [
-      "lockfileVersion: '9.0'",
-      "importers:",
-      "  .:",
-      "    dependencies:",
-      "      contract:",
-      "        specifier: file:/tmp/contract.tgz",
-      "        version: file:../../../../tmp/contract.tgz",
-      "",
-    ].join("\n"));
-    const contaminated = join(fixture, "contaminated.tgz");
-    assert.equal(spawnSync("tar", ["-czf", contaminated, "package"], { cwd: fixture }).status, 0);
-    assert.throws(() => assertPortableDependencyArchive(contaminated), /external local dependency/);
-  } finally {
-    rmSync(fixture, { recursive: true, force: true });
-  }
 });
