@@ -173,6 +173,10 @@ export function activateProviderTerminalPlugin(
       let renderedSequence: number | null = null;
       let rendering = false;
       let frameRequest: number | null = null;
+      let byteFrameRequest: number | null = null;
+      let writingOutput = false;
+      let pendingOutput: Uint8Array[] = [];
+      let pendingOutputSequence = 0;
       let writable = false;
       let requestedSize: { cols: number; rows: number } | null = null;
       let startTask = Promise.resolve();
@@ -281,6 +285,35 @@ export function activateProviderTerminalPlugin(
           failure: { code: "FRAME_FAILED", message: String(error) }, fidelity: "unavailable",
         });
       };
+      const flushByteOutput = async () => {
+        if (writingOutput || stopped || pendingOutput.length === 0 || !presenter.writeOutput) return;
+        const chunks = pendingOutput;
+        const throughSeq = pendingOutputSequence;
+        pendingOutput = [];
+        const size = chunks.reduce((total, bytes) => total + bytes.length, 0);
+        const bytes = new Uint8Array(size);
+        let offset = 0;
+        for (const chunk of chunks) {
+          bytes.set(chunk, offset);
+          offset += chunk.length;
+        }
+        writingOutput = true;
+        try {
+          await presenter.writeOutput(bytes);
+          renderedSequence = Math.max(renderedSequence ?? 0, throughSeq);
+          status.refresh();
+        } finally {
+          writingOutput = false;
+          scheduleByteOutput();
+        }
+      };
+      const scheduleByteOutput = () => {
+        if (byteFrameRequest !== null || writingOutput || stopped || pendingOutput.length === 0) return;
+        byteFrameRequest = requestAnimationFrame(() => {
+          byteFrameRequest = null;
+          void flushByteOutput().catch(reportFrameFailure);
+        });
+      };
       const scheduleRenderLatest = () => {
         if (frameRequest !== null || rendering || stopped
             || requestedSequence <= (renderedSequence ?? -1)) return;
@@ -330,10 +363,9 @@ export function activateProviderTerminalPlugin(
         session = opened;
         output = binding.onData(session, (bytes, throughSeq) => {
           if (config.renderer?.delivery === "bytes") {
-            void presenter.writeOutput!(bytes).then(() => {
-              renderedSequence = Math.max(renderedSequence ?? 0, throughSeq);
-              status.refresh();
-            }).catch(reportFrameFailure);
+            pendingOutput.push(bytes.slice());
+            pendingOutputSequence = Math.max(pendingOutputSequence, throughSeq);
+            scheduleByteOutput();
             return;
           }
           requestedSequence = Math.max(requestedSequence, throughSeq);
@@ -468,6 +500,9 @@ export function activateProviderTerminalPlugin(
           writable = false;
           if (frameRequest !== null) cancelAnimationFrame(frameRequest);
           frameRequest = null;
+          if (byteFrameRequest !== null) cancelAnimationFrame(byteFrameRequest);
+          byteFrameRequest = null;
+          pendingOutput = [];
           resize.dispose();
           container.removeEventListener("focusin", focusChanged);
           container.removeEventListener("focusout", focusChanged);

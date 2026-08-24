@@ -65,6 +65,7 @@ describe("provider-backed terminal plugin", () => {
     const root = document.createElement("div"); document.body.append(root);
     view!.mount(root, { viewId: "pane" });
     await vi.waitFor(() => expect(root.dataset.terminalPhase).toBe("live"));
+    await vi.waitFor(() => expect(output).toEqual([new Uint8Array([65])]));
     expect([...commands.keys()].sort()).toEqual([...TERMINAL_PLUGIN_COMMANDS].sort());
     expect(output).toEqual([new Uint8Array([65])]);
     output.length = 0;
