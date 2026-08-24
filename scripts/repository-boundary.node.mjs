@@ -53,6 +53,13 @@ test("portable release includes the presentation status owner", () => {
   assert.ok(releaseFiles.includes("src/terminal-presentation-status.ts"));
 });
 
+test("portable release includes every public source module", () => {
+  const releaseFiles = new Set(JSON.parse(readFileSync(join(root, "release-files.json"), "utf8")));
+  const index = readFileSync(join(root, "src/index.ts"), "utf8");
+  const modules = [...index.matchAll(/export \* from "[.]\/(.+)";/g)].map((match) => `src/${match[1]}.ts`);
+  assert.deepEqual(modules.filter((module) => !releaseFiles.has(module)), []);
+});
+
 test("preflight judges the effective repository-selected pnpm", () => {
   const source = readFileSync(join(root, "scripts/check-build-environment.sh"), "utf8");
   assert.match(source, /pnpm_actual=.*pnpm --version/);
