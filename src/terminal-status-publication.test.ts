@@ -9,6 +9,10 @@ const presentation = () => ({
   mountedAtUnixMs: 1, firstVisibleFrameAtUnixMs: null, firstFocusableInputAtUnixMs: null,
   lastRenderedAtUnixMs: null, lastFocusedAtUnixMs: null, lastInputAtUnixMs: null, lastPtyWriteAtUnixMs: null,
   lastRenderDurationMs: null, maxRenderDurationMs: null, lastInputToPtyWriteMs: null,
+  theme: {
+    foreground: "#eeeeec", background: "#1e1e1e", cursor: "#ffffff",
+    cursorAccent: "#1e1e1e", selectionBackground: "#555753",
+  },
 });
 
 describe("terminal status publication", () => {
