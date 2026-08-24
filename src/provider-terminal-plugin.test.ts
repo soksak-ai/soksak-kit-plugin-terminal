@@ -176,6 +176,8 @@ describe("provider-backed terminal plugin", () => {
     let reflow: (() => void) | undefined;
     const resizeRequests: Array<Record<string, unknown>> = [];
     let width = 800;
+    let releaseNarrow!: () => void;
+    const narrowObserved = new Promise<void>((resolve) => { releaseNarrow = resolve; });
     const pty = {
       send: vi.fn(async (request: Record<string, unknown>) => {
         const payload = (request.args as { request: Record<string, unknown> }).request;
@@ -192,6 +194,7 @@ describe("provider-backed terminal plugin", () => {
       send: vi.fn(async (request: Record<string, unknown>) => {
         if (request.command === "terminal.archived") return { ok: false, error: "missing", result: { code: "NOT_FOUND" } };
         const payload = (request.args as { request: Record<string, unknown> }).request;
+        if (request.command === "terminal.waitSize" && payload.cols === 54) await narrowObserved;
         const data = request.command === "terminal.prepareSession" ? { observerToken: "observer" }
           : request.command === "terminal.waitSize" ? { cols: payload.cols, rows: payload.rows }
           : request.command === "terminal.frame" ? { outputSequence: 0, frame: { cols: Number(payload.cols ?? 54), rows: 24, cursor: [0,0], cursor_visible: true, alt_active: false, lines: [[]] } } : {};
@@ -220,6 +223,9 @@ describe("provider-backed terminal plugin", () => {
     width = 432;
     reflow!();
     await vi.waitFor(() => expect(resizeRequests).toContainEqual(expect.objectContaining({ cols: 54, rows: 24 })));
+    width = 736;
+    releaseNarrow();
+    await vi.waitFor(() => expect(resizeRequests).toContainEqual(expect.objectContaining({ cols: 92, rows: 24 })));
   });
 
   it("registers the common command contract exactly", async () => {
