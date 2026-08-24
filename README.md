@@ -1,7 +1,7 @@
 # soksak-kit-plugin-terminal
 
 Reusable browser-side implementation for terminal plugins implementing
-`soksak-spec-plugin-terminal` 0.0.5.
+`soksak-spec-plugin-terminal` 0.0.7.
 
 The kit owns view registration, PTY and recovery lifecycle, resizing, public status, and every
 command required by the terminal plugin contract. A plugin may supply a renderer adapter for engine
@@ -10,6 +10,12 @@ standard commands. Optional plugin commands are registered as explicit extension
 Status reports host pixels, requested size, PTY observation, recovery observation and rendered size.
 Layout updates consume both `ResizeObserver` and the host's post-commit `layout.reflow` event. Both
 signals enter the same serial resize worker; no interval or retry path exists.
+
+The kit is also the only browser-side owner of terminal theme resolution. It maps the contract's
+five semantic roles from the host's public tokens, applies them to `terminal-screen`, publishes the
+resolved values through `presentation.theme`, and exposes cursor, cursor-accent, and selection as
+the contract-declared CSS properties. Frame renderers and byte-renderer adapters consume this same
+implementation; a plugin must not keep a private terminal theme map.
 
 ## Stream sequence rule
 

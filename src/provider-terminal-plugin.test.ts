@@ -7,6 +7,10 @@ import {
 } from "@soksak/soksak-contract-plugin-terminal";
 globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as typeof ResizeObserver;
 
+for (const [name, value] of Object.entries({
+  fg: "#eeeeec", card: "#1e1e1e", acc: "#ffffff", fg3: "#555753",
+})) document.documentElement.style.setProperty(`--${name}`, value);
+
 const settledClose = () => ({ dispose() {}, settled: Promise.resolve() });
 
 describe("provider-backed terminal plugin", () => {

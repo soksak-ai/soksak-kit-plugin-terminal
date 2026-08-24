@@ -2,6 +2,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTerminalStatusController } from "./terminal-status-publication";
 import { closedTerminalPresentation } from "./terminal-presentation-status";
+
+const theme = {
+  foreground: "#eeeeec", background: "#1e1e1e", cursor: "#ffffff",
+  cursorAccent: "#1e1e1e", selectionBackground: "#555753",
+};
 import { waitForTerminalConditions } from "./terminal-condition-wait";
 
 describe("terminal condition wait", () => {
@@ -10,7 +15,7 @@ describe("terminal condition wait", () => {
     const status = createTerminalStatusController({
       root, pluginId: "plugin", engineId: "engine", rendererId: "renderer",
       rendererProfile: "web", publish: vi.fn(),
-      presentation: () => closedTerminalPresentation("frame"),
+      presentation: () => closedTerminalPresentation("frame", theme),
     });
     status.set("applying-snapshot", {
       recoveryOutcome: "continued", fidelity: "complete",
@@ -33,7 +38,7 @@ describe("terminal condition wait", () => {
     const status = createTerminalStatusController({
       root, pluginId: "plugin", engineId: "engine", rendererId: "renderer",
       rendererProfile: "web", publish: vi.fn(),
-      presentation: () => closedTerminalPresentation("frame"),
+      presentation: () => closedTerminalPresentation("frame", theme),
     });
     status.set("live", { recoveryOutcome: "fresh", fidelity: "complete" });
     let resolveSize!: (size: { cols: number; rows: number }) => void;

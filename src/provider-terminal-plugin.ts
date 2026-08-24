@@ -14,6 +14,7 @@ import {
 import { waitForTerminalConditions } from "./terminal-condition-wait";
 import { waitForTerminalSize } from "./terminal-size-wait";
 import { createTerminalResizeWorker } from "./terminal-resize-worker";
+import { readTerminalTheme } from "./terminal-theme";
 import { terminalResizeStatus } from "./terminal-resize-status";
 import { observeTerminalLayout, type TerminalLayoutEvents } from "./terminal-layout-observer";
 
@@ -213,6 +214,7 @@ export function activateProviderTerminalPlugin(
       presentation = createTerminalPresentationStatus(
         container,
         config.renderer?.delivery === "bytes" ? "bytes" : "frame",
+        () => readTerminalTheme(container.ownerDocument.documentElement),
       );
       if (config.renderer?.delivery === "bytes" && (!presenter.writeOutput || !presenter.applySnapshot || !presenter.onRendered)) {
         throw new Error("byte renderer requires parser and rendered-frame completion contracts");
@@ -584,6 +586,7 @@ export function activateProviderTerminalPlugin(
       recovery: null, rendered: null, operation: "closed",
       presentation: closedTerminalPresentation(
         config.renderer?.delivery === "bytes" ? "bytes" : "frame",
+        readTerminalTheme(document.documentElement),
       ),
   });
   register("status", { view: viewParam }, async (params, context) => {

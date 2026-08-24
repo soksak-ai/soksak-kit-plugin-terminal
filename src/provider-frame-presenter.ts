@@ -1,4 +1,8 @@
-import { TERMINAL_ANSI_PALETTE } from "@soksak/soksak-contract-plugin-terminal";
+import {
+  TERMINAL_ANSI_PALETTE,
+  TERMINAL_THEME_CONTRACT,
+} from "@soksak/soksak-contract-plugin-terminal";
+import { bindTerminalThemeSurface } from "./terminal-theme";
 
 export interface ProviderFrameCell { text: string; fg: string; bg: string; attrs: number; wide: boolean }
 export interface ProviderFrame {
@@ -109,8 +113,8 @@ export function createProviderFramePresenter(
   screen.tabIndex = -1;
   Object.assign(screen.style, {
     margin: "0", width: "100%", height: "100%", overflow: "auto", whiteSpace: "pre",
-    color: "var(--fg)", backgroundColor: "var(--card)",
   });
+  bindTerminalThemeSurface(screen);
   const input = document.createElement("textarea");
   input.dataset.node = "terminal-input";
   input.dataset.focused = "false";
@@ -146,10 +150,11 @@ export function createProviderFramePresenter(
     const attrs = Number(cursor.dataset.attrs ?? "0");
     cursor.style.color = indexedColor(cursor.dataset.fg ?? "default", (attrs & 1) !== 0) || "var(--fg)";
     cursor.style.backgroundColor = indexedColor(cursor.dataset.bg ?? "default") || "var(--card)";
-    cursor.style.outline = cursorVisible && !focused ? "1px solid var(--acc)" : "";
+    cursor.style.outline = cursorVisible && !focused
+      ? `1px solid var(${TERMINAL_THEME_CONTRACT.properties.cursor})` : "";
     if (cursorVisible && focused) {
-      cursor.style.backgroundColor = "var(--acc)";
-      cursor.style.color = "var(--card)";
+      cursor.style.backgroundColor = `var(${TERMINAL_THEME_CONTRACT.properties.cursor})`;
+      cursor.style.color = `var(${TERMINAL_THEME_CONTRACT.properties.cursorAccent})`;
     }
   };
   input.addEventListener("focus", updateCursor);

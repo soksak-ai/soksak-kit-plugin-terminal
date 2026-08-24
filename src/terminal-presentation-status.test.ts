@@ -3,13 +3,14 @@ import { describe, expect, it } from "vitest";
 
 import { createTerminalPresentationStatus } from "./terminal-presentation-status";
 
+const theme = {
+  foreground: "#eeeeec", background: "#1e1e1e", cursor: "#ffffff",
+  cursorAccent: "#1e1e1e", selectionBackground: "#555753",
+};
+
 describe("terminal presentation status", () => {
   it("publishes the resolved terminal theme through status", () => {
     const root = document.createElement("div");
-    const theme = {
-      foreground: "#eeeeec", background: "#1e1e1e", cursor: "#ffffff",
-      cursorAccent: "#1e1e1e", selectionBackground: "#555753",
-    };
     const status = createTerminalPresentationStatus(root, "frame", () => theme, () => 100);
     expect(status.current().theme).toEqual(theme);
   });
@@ -26,7 +27,7 @@ describe("terminal presentation status", () => {
     const input = document.createElement("textarea");
     input.dataset.node = "terminal-input";
     root.append(screen, input);
-    const status = createTerminalPresentationStatus(root, "frame", () => wall);
+    const status = createTerminalPresentationStatus(root, "frame", () => theme, () => wall);
 
     status.markRendered(4);
     status.markRendered(7);
@@ -52,7 +53,7 @@ describe("terminal presentation status", () => {
     input.dataset.node = "terminal-input";
     root.append(input);
     document.body.append(root);
-    const status = createTerminalPresentationStatus(root, "frame", () => wall) as ReturnType<typeof createTerminalPresentationStatus> & {
+    const status = createTerminalPresentationStatus(root, "frame", () => theme, () => wall) as ReturnType<typeof createTerminalPresentationStatus> & {
       markFocused(focused: boolean): void;
     };
 
