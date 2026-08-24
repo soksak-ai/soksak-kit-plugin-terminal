@@ -2,6 +2,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTerminalStatusController } from "./terminal-status-publication";
 
+const presentation = () => ({
+  delivery: "frame" as const, mountSequence: 1, readySequence: null, renderSequence: 0,
+  acceptedInputSequence: 0, ptyWriteSequence: 0, focusedInput: false,
+  cursorVisible: false, cursorActive: false, cursorRow: null, cursorColumn: null,
+  mountedAtUnixMs: 1, firstVisibleFrameAtUnixMs: null, firstFocusableInputAtUnixMs: null,
+  lastRenderedAtUnixMs: null, lastInputAtUnixMs: null, lastPtyWriteAtUnixMs: null,
+  lastRenderDurationMs: null, maxRenderDurationMs: null, lastInputToPtyWriteMs: null,
+});
+
 describe("terminal status publication", () => {
   it("publishes lifecycle state to status and observable DOM fields", () => {
     const root = document.createElement("div");
@@ -12,7 +21,7 @@ describe("terminal status publication", () => {
     });
     const controller = createTerminalStatusController({
       root, pluginId: "soksak-plugin-terminal-xterm", engineId: "vt100",
-      rendererId: "xterm", rendererProfile: "web", publish,
+      rendererId: "xterm", rendererProfile: "web", publish, presentation,
     });
     controller.set("preparing-recovery");
     controller.set("live", { recoveryOutcome: "continued", fidelity: "complete" });
@@ -31,7 +40,7 @@ describe("terminal status publication", () => {
     const root = document.createElement("div");
     const controller = createTerminalStatusController({
       root, pluginId: "plugin", engineId: "engine", rendererId: "renderer",
-      rendererProfile: "web", publish: () => undefined,
+      rendererProfile: "web", publish: () => undefined, presentation,
     });
     controller.set("blocked", {
       recoveryOutcome: "blocked", fidelity: "unavailable",
@@ -45,7 +54,7 @@ describe("terminal status publication", () => {
   it("waits on status publication without polling", async () => {
     const controller = createTerminalStatusController({
       root: document.createElement("div"), pluginId: "plugin", engineId: "engine",
-      rendererId: "renderer", rendererProfile: "web", publish: () => undefined,
+      rendererId: "renderer", rendererProfile: "web", publish: () => undefined, presentation,
     });
     const reached = controller.wait(["live", "archived", "blocked"], 100);
     controller.set("preparing-recovery");

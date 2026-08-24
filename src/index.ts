@@ -1,4 +1,5 @@
 export * from "./terminal-status-publication";
+export * from "./terminal-presentation-status";
 export * from "./terminal-condition-wait";
 export * from "./terminal-session-binding";
 export * from "./provider-frame-presenter";

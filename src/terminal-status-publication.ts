@@ -10,6 +10,7 @@ export interface TerminalStatusControllerOptions {
   rendererId: string;
   rendererProfile: TerminalRendererProfile;
   publish: (status: TerminalPluginPublicStatus) => void;
+  presentation: () => TerminalPluginPublicStatus["presentation"];
 }
 
 export interface TerminalStatusController {
@@ -19,6 +20,7 @@ export interface TerminalStatusController {
     failure?: TerminalPluginFailure | null;
   }): TerminalPluginPublicStatus;
   current(): TerminalPluginPublicStatus;
+  refresh(): TerminalPluginPublicStatus;
   wait(phases: readonly TerminalPluginPhase[], timeoutMs: number): Promise<TerminalPluginPublicStatus>;
   close(): TerminalPluginPublicStatus;
 }
@@ -31,10 +33,11 @@ export function createTerminalStatusController(
     rendererId: options.rendererId, rendererProfile: options.rendererProfile,
     recoveryOutcome: "fresh", fidelity: "unavailable", failure: null,
     hostPixels: { width: 0, height: 0 }, requested: null, pty: null, recovery: null,
-    rendered: null, operation: "initializing",
+    rendered: null, operation: "initializing", presentation: options.presentation(),
   };
   const listeners = new Set<(status: TerminalPluginPublicStatus) => void>();
   const publish = (): TerminalPluginPublicStatus => {
+    status = { ...status, presentation: options.presentation() };
     options.root.dataset.terminalPhase = status.phase;
     options.root.dataset.terminalRecovery = status.recoveryOutcome;
     options.root.dataset.terminalFidelity = status.fidelity;
@@ -60,7 +63,12 @@ export function createTerminalStatusController(
       };
       return publish();
     },
-    current: () => ({ ...status, failure: status.failure ? { ...status.failure } : null }),
+    current: () => ({
+      ...status,
+      presentation: options.presentation(),
+      failure: status.failure ? { ...status.failure } : null,
+    }),
+    refresh: publish,
     wait(phases, timeoutMs) {
       const accepted = new Set(phases);
       if (accepted.has(status.phase)) return Promise.resolve(this.current());

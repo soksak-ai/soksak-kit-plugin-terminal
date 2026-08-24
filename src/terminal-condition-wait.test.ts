@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
 import { createTerminalStatusController } from "./terminal-status-publication";
+import { closedTerminalPresentation } from "./terminal-presentation-status";
 import { waitForTerminalConditions } from "./terminal-condition-wait";
 
 describe("terminal condition wait", () => {
@@ -9,6 +10,7 @@ describe("terminal condition wait", () => {
     const status = createTerminalStatusController({
       root, pluginId: "plugin", engineId: "engine", rendererId: "renderer",
       rendererProfile: "web", publish: vi.fn(),
+      presentation: () => closedTerminalPresentation("frame"),
     });
     status.set("applying-snapshot", {
       recoveryOutcome: "continued", fidelity: "complete",
@@ -31,6 +33,7 @@ describe("terminal condition wait", () => {
     const status = createTerminalStatusController({
       root, pluginId: "plugin", engineId: "engine", rendererId: "renderer",
       rendererProfile: "web", publish: vi.fn(),
+      presentation: () => closedTerminalPresentation("frame"),
     });
     status.set("live", { recoveryOutcome: "fresh", fidelity: "complete" });
     let resolveSize!: (size: { cols: number; rows: number }) => void;

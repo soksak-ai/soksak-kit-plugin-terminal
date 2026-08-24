@@ -64,6 +64,13 @@ describe("provider-backed terminal plugin", () => {
     expect([...commands.keys()].sort()).toEqual([...TERMINAL_PLUGIN_COMMANDS].sort());
     expect(output).toEqual([new Uint8Array([65])]);
     expect(snapshots).toEqual([]);
+    const status = await (commands.get("status")!.handler as (
+      params: Record<string, unknown>, context: { pane: string },
+    ) => Promise<Record<string, unknown>>)({ view: "pane" }, { pane: "pane" });
+    expect(status.presentation).toMatchObject({
+      delivery: "bytes", readySequence: 1, renderSequence: 1,
+      acceptedInputSequence: 0, ptyWriteSequence: 0,
+    });
   });
 
   it("rejects extensions that replace standard terminal commands", () => {
@@ -177,7 +184,7 @@ describe("provider-backed terminal plugin", () => {
         const payload = (request.args as { request: Record<string, unknown> }).request;
         const data = request.command === "terminal.prepareSession" ? { observerToken: "observer" }
           : request.command === "terminal.waitSize" ? { cols: payload.cols, rows: payload.rows }
-          : request.command === "terminal.frame" ? { outputSequence: 0, frame: { cols: Number(payload.cols ?? 54), rows: 24, cursor: [0,0], alt_active: false, lines: [[]] } } : {};
+          : request.command === "terminal.frame" ? { outputSequence: 0, frame: { cols: Number(payload.cols ?? 54), rows: 24, cursor: [0,0], cursor_visible: true, alt_active: false, lines: [[]] } } : {};
         return { ok: true, result: { data } };
       }),
       stream: vi.fn(),
@@ -301,7 +308,7 @@ describe("provider-backed terminal plugin", () => {
         const data = command === "pty.pane" ? { held: true }
           : command === "terminal.rehydrate" ? {
             leaseToken: "lease", uptoSeq: 12,
-            frame: { cols: 2, rows: 1, cursor: [0, 1], alt_active: false, lines: [[{ text: "R", fg: "default", bg: "default", attrs: 0, wide: false }]] },
+            frame: { cols: 2, rows: 1, cursor: [0, 1], cursor_visible: true, alt_active: false, lines: [[{ text: "R", fg: "default", bg: "default", attrs: 0, wide: false }]] },
           }
           : command === "pty.open" ? { session: 7 } : {};
         return { ok: true, result: { data } };
@@ -355,7 +362,7 @@ describe("provider-backed terminal plugin", () => {
         const command = request.command;
         if (command === "terminal.archived") return { ok: false, error: "not found", result: { code: "NOT_FOUND" } };
         const data = command === "terminal.prepareSession" ? { observerToken: "obs" }
-          : command === "terminal.frame" ? { outputSequence: 12, frame: { cols: 4, rows: 1, cursor: [0, 2], alt_active: false, lines: [[{ text: "OK", fg: "default", bg: "default", attrs: 0, wide: false }]] } } : {};
+          : command === "terminal.frame" ? { outputSequence: 12, frame: { cols: 4, rows: 1, cursor: [0, 2], cursor_visible: true, alt_active: false, lines: [[{ text: "OK", fg: "default", bg: "default", attrs: 0, wide: false }]] } } : {};
         return { ok: true, result: { data } };
       }),
       stream: vi.fn(),
@@ -381,8 +388,20 @@ describe("provider-backed terminal plugin", () => {
     });
     expect(status).not.toHaveProperty("source");
     expect(status).not.toHaveProperty("cols");
-    await commands.get("send")!({ view: "pane", data: "x" });
-    expect(writes).toContainEqual(expect.objectContaining({ command: "pty.write" }));
+    const screen = root.querySelector<HTMLElement>('[data-node="terminal-screen"]')!;
+    const input = root.querySelector<HTMLTextAreaElement>('[data-node="terminal-input"]')!;
+    screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    input.value = "x";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await vi.waitFor(() => expect(writes).toContainEqual(expect.objectContaining({ command: "pty.write" })));
+    const afterInput = await commands.get("status")!({ view: "pane" }) as {
+      presentation: Record<string, unknown>;
+    };
+    expect(afterInput.presentation).toMatchObject({
+      delivery: "frame", acceptedInputSequence: 1, ptyWriteSequence: 1,
+      focusedInput: true, cursorVisible: true, cursorActive: true,
+      cursorRow: 0, cursorColumn: 2,
+    });
   });
 
   it("coalesces output while one provider frame is in flight", async () => {
@@ -395,7 +414,7 @@ describe("provider-backed terminal plugin", () => {
         if (command === "terminal.frame") { frameSequences.push(Number(asked.afterSequence)); if (frameSequences.length === 1) await blocked; }
         if (command === "terminal.archived") return { ok: false, error: "not found", result: { code: "NOT_FOUND" } };
         const data = command === "pty.open" ? { session: 1 } : command === "terminal.prepareSession" ? { observerToken: "o" }
-          : command === "terminal.frame" ? { outputSequence: Number(asked.afterSequence), frame: { cols: 1, rows: 1, cursor: [0,0], alt_active: false, lines: [[]] } } : {};
+          : command === "terminal.frame" ? { outputSequence: Number(asked.afterSequence), frame: { cols: 1, rows: 1, cursor: [0,0], cursor_visible: true, alt_active: false, lines: [[]] } } : {};
         return { ok: true, result: { data } };
       }),
       stream: vi.fn(async (_r: unknown, h: { onBytes(bytes: Uint8Array): void }) => { emit = h.onBytes; return { answer: { ok: true, result: { data: { startSeq: 0 } } }, close: settledClose() }; }),

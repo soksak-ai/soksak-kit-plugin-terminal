@@ -7,6 +7,10 @@ import {
 import { createProviderFramePresenter, type ProviderFrame } from "./provider-frame-presenter";
 import { createTerminalSessionBinding, type TerminalSessionHost } from "./terminal-session-binding";
 import { createTerminalStatusController } from "./terminal-status-publication";
+import {
+  closedTerminalPresentation,
+  createTerminalPresentationStatus,
+} from "./terminal-presentation-status";
 import { waitForTerminalConditions } from "./terminal-condition-wait";
 import { waitForTerminalSize } from "./terminal-size-wait";
 import { createTerminalResizeWorker } from "./terminal-resize-worker";
@@ -95,6 +99,7 @@ interface MountedScreen {
   presenter: TerminalPresenter;
   session: number;
   status: ReturnType<typeof createTerminalStatusController>;
+  presentation: ReturnType<typeof createTerminalPresentationStatus>;
   requestedSize: { cols: number; rows: number } | null;
   renderedOutputSequence: number | null;
   writable: boolean;
@@ -170,17 +175,32 @@ export function activateProviderTerminalPlugin(
       let requestedSize: { cols: number; rows: number } | null = null;
       let startTask = Promise.resolve();
       let stopping: Promise<void> | null = null;
-      const framePresenter = config.renderer ? undefined : createProviderFramePresenter(container, (text) => {
-        if (writable && session) void binding.write(session, text);
-      });
+      let presentation: ReturnType<typeof createTerminalPresentationStatus>;
+      let status: ReturnType<typeof createTerminalStatusController>;
+      const writeToPty = (text: string, acceptedInput: boolean) => {
+        if (acceptedInput) {
+          presentation.markInputAccepted();
+          status?.refresh();
+        }
+        if (!writable || !session) return;
+        void binding.write(session, text).then(() => {
+          presentation.markPtyWrite();
+          status.refresh();
+        });
+      };
+      const framePresenter = config.renderer
+        ? undefined
+        : createProviderFramePresenter(container, (text) => writeToPty(text, true));
       const presenter: TerminalPresenter = config.renderer
-        ? config.renderer.create(container, pane, (text) => {
-            if (writable && session) void binding.write(session, text);
-          })
+        ? config.renderer.create(container, pane, (text) => writeToPty(text, true))
         : {
             ...framePresenter!,
             renderFrame: (frame) => framePresenter!.render(frame),
           };
+      presentation = createTerminalPresentationStatus(
+        container,
+        config.renderer?.delivery === "bytes" ? "bytes" : "frame",
+      );
       if (config.renderer?.delivery === "bytes" && (!presenter.writeOutput || !presenter.applySnapshot)) {
         throw new Error("byte renderer requires output and snapshot completion contracts");
       }
@@ -193,7 +213,7 @@ export function activateProviderTerminalPlugin(
           rows: Math.max(1, Math.floor(container.clientHeight / 16)),
         };
       };
-      const status = createTerminalStatusController({
+      status = createTerminalStatusController({
         root: container,
         pluginId: config.pluginId,
         engineId: config.engineId,
@@ -204,11 +224,19 @@ export function activateProviderTerminalPlugin(
             code: value.failure.code, message: value.failure.message,
           } : null);
         },
+        presentation: presentation.current,
       });
+
+      const markRendered = (startedAt: number) => {
+        presentation.markRendered(Math.max(0, performance.now() - startedAt));
+        status.refresh();
+      };
 
       const applyFrame = (value: unknown): boolean => {
         if (!value || typeof value !== "object") return false;
+        const startedAt = performance.now();
         presenter.renderFrame?.(value as ProviderFrame);
+        markRendered(startedAt);
         return true;
       };
       const applyFrameSnapshot = (value: Record<string, unknown>): boolean => {
@@ -272,8 +300,10 @@ export function activateProviderTerminalPlugin(
         session = opened;
         output = binding.onData(session, (bytes, throughSeq) => {
           if (config.renderer?.delivery === "bytes") {
+            const startedAt = performance.now();
             void presenter.writeOutput!(bytes).then(() => {
               renderedSequence = Math.max(renderedSequence ?? 0, throughSeq);
+              markRendered(startedAt);
             }).catch(reportFrameFailure);
             return;
           }
@@ -283,7 +313,7 @@ export function activateProviderTerminalPlugin(
         writable = true;
         io = host.terminal?.registerIo?.(pane, {
           readBuffer: (lines) => presenter.read(lines),
-          sendInput: (data) => { if (writable && session) void binding.write(session, data); },
+          sendInput: (data) => writeToPty(data, false),
         });
         requestResize();
       };
@@ -312,6 +342,8 @@ export function activateProviderTerminalPlugin(
         if (await detachIfStopped(opened)) return;
         attach(opened);
         container.dataset.terminalOperation = "ready";
+        presentation.markReady();
+        status.refresh();
         status.set("live", { recoveryOutcome: "fresh", fidelity: "complete" });
       };
       const startWarm = async () => {
@@ -331,7 +363,11 @@ export function activateProviderTerminalPlugin(
           : !applyFrame(restored.frame))) {
           throw new Error("rehydrate returned no frame or snapshot lease");
         }
-        if (config.renderer?.delivery === "bytes") await presenter.applySnapshot!(restored, false);
+        if (config.renderer?.delivery === "bytes") {
+          const startedAt = performance.now();
+          await presenter.applySnapshot!(restored, false);
+          markRendered(startedAt);
+        }
         const restoredSequence = Number(restored.uptoSeq);
         if (!Number.isSafeInteger(restoredSequence) || restoredSequence < 0) {
           throw new Error("rehydrate returned no exact output sequence");
@@ -346,6 +382,8 @@ export function activateProviderTerminalPlugin(
         requestedSize = { cols: 80, rows: 24 };
         attach(opened);
         container.dataset.terminalOperation = "ready";
+        presentation.markReady();
+        status.refresh();
         status.set("live", { recoveryOutcome: "continued", fidelity: "complete" });
       };
       const startArchived = async (): Promise<boolean> => {
@@ -359,7 +397,9 @@ export function activateProviderTerminalPlugin(
         const data = requireReply(archived, "archived");
         if (config.renderer?.delivery === "bytes") {
           if (!presenter.applySnapshot) throw new Error("byte presenter cannot restore snapshots");
+          const startedAt = performance.now();
           await presenter.applySnapshot(data, true);
+          markRendered(startedAt);
         } else if (!applyFrame(data.frame)) throw new Error("archived returned no frame");
         const archivedSequence = Number(data.uptoSeq);
         if (!Number.isSafeInteger(archivedSequence) || archivedSequence < 0) {
@@ -368,6 +408,8 @@ export function activateProviderTerminalPlugin(
         renderedSequence = archivedSequence;
         writable = false;
         container.dataset.terminalOperation = "ready";
+        presentation.markReady();
+        status.refresh();
         status.set("archived", {
           recoveryOutcome: "archived", fidelity: "complete",
         });
@@ -391,6 +433,7 @@ export function activateProviderTerminalPlugin(
         presenter,
         get session() { return session; },
         status,
+        presentation,
         get requestedSize() { return requestedSize; },
         get renderedOutputSequence() { return renderedSequence; },
         get writable() { return writable; },
@@ -472,6 +515,9 @@ export function activateProviderTerminalPlugin(
       phase: "closed", recoveryOutcome: "blocked", fidelity: "unavailable",
       failure: null, hostPixels: { width: 0, height: 0 }, requested: null, pty: null,
       recovery: null, rendered: null, operation: "closed",
+      presentation: closedTerminalPresentation(
+        config.renderer?.delivery === "bytes" ? "bytes" : "frame",
+      ),
   });
   register("status", { view: viewParam }, async (params, context) => {
     const screen = target(params, context);
@@ -549,7 +595,10 @@ export function activateProviderTerminalPlugin(
     if (!screen?.writable || typeof params.data !== "string") {
       return { sent: false };
     }
-    void binding.write(screen.session, params.data);
+    void binding.write(screen.session, params.data).then(() => {
+      screen.presentation.markPtyWrite();
+      screen.status.refresh();
+    });
     return { sent: params.data.length };
   });
   register("clear", { view: viewParam }, (params, context) => {
