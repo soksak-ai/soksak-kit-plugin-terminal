@@ -9,6 +9,8 @@ test("repository owns public metadata", () => {
   assert.equal(existsSync(join(root, "README.md")), true);
   assert.equal(existsSync(join(root, "README.ko.md")), true);
   assert.equal(existsSync(join(root, "LICENSE")), true);
+  assert.equal(existsSync(join(root, "Makefile")), true);
+  const nodeVersion = readFileSync(join(root, ".node-version"), "utf8").trim();
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   assert.equal(
     pkg.repository.url,
@@ -18,6 +20,7 @@ test("repository owns public metadata", () => {
   assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.18" });
   assert.equal(pkg.version, kit.version);
   assert.match(pkg.engines.node, /^\d+\.\d+\.\d+$/);
+  assert.equal(nodeVersion, pkg.engines.node);
   assert.match(pkg.packageManager, /^pnpm@\d+\.\d+\.\d+$/);
   assert.equal("pnpm" in pkg, false);
   assert.equal(pkg.peerDependencies["@soksak/soksak-contract-plugin-terminal"], "0.0.6");
@@ -36,10 +39,11 @@ test("repository owns public metadata", () => {
   assert.ok(releaseFiles.includes("src/terminal-resize-status.ts"));
   assert.ok(releaseFiles.includes("src/terminal-layout-observer.ts"));
   const workflow = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
-  assert.match(workflow, /node-version-file: component\/package\.json/);
+  assert.match(workflow, /node-version-file: component\/[.]node-version/);
   assert.match(workflow, /package_json_file: component\/package\.json/);
-  assert.match(workflow, /releases\/download\/v0\.0\.29\/soksak-ai-plugin-spec-0\.0\.29[.]tgz/);
-  assert.match(workflow, /f3311f6e20069667486e753e8669e7f7787f197f47e4a94e14207a066c2db32c/);
+  assert.match(workflow, /inputs\.spec_url|inputs\.spec_sha256/);
+  assert.match(workflow, /make verify/);
+  assert.doesNotMatch(workflow, /soksak-ai-plugin-spec-\d+[.]\d+[.]\d+[.]tgz/);
   assert.doesNotMatch(workflow, /repository: soksak-ai\/soksak-spec/);
   assert.match(workflow, /owner-enforced immutable releases must be enabled/);
 });
