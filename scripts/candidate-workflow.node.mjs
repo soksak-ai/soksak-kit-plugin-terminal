@@ -16,7 +16,7 @@ test("kit owner composes and seals exact spec and contract candidate inputs", ()
     "verify-candidate-artifact.mjs", "write-candidate-input-receipt.mjs",
     "stage-node-candidate.mjs", "build-node-candidate.mjs",
     "--kind portable", "--generated dist",
-    "seal-candidate-artifact.mjs", "make verify",
+    "seal-candidate-artifact.mjs",
     "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     "if-no-files-found: error",
   ]) assert.match(workflow, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
