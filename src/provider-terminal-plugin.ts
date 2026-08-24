@@ -202,8 +202,8 @@ export function activateProviderTerminalPlugin(
         container,
         config.renderer?.delivery === "bytes" ? "bytes" : "frame",
       );
-      if (config.renderer?.delivery === "bytes" && (!presenter.writeOutput || !presenter.applySnapshot)) {
-        throw new Error("byte renderer requires output and snapshot completion contracts");
+      if (config.renderer?.delivery === "bytes" && (!presenter.writeOutput || !presenter.applySnapshot || !presenter.onRendered)) {
+        throw new Error("byte renderer requires parser and rendered-frame completion contracts");
       }
       const terminalSize = () => {
         presenter.fit?.();
@@ -240,6 +240,10 @@ export function activateProviderTerminalPlugin(
         presentation.markRendered(Math.max(0, performance.now() - startedAt));
         status.refresh();
       };
+      const presenterRendering = presenter.onRendered?.((durationMs) => {
+        presentation.markRendered(durationMs);
+        status.refresh();
+      });
 
       const applyFrame = (value: unknown): boolean => {
         if (!value || typeof value !== "object") return false;
@@ -309,10 +313,9 @@ export function activateProviderTerminalPlugin(
         session = opened;
         output = binding.onData(session, (bytes, throughSeq) => {
           if (config.renderer?.delivery === "bytes") {
-            const startedAt = performance.now();
             void presenter.writeOutput!(bytes).then(() => {
               renderedSequence = Math.max(renderedSequence ?? 0, throughSeq);
-              markRendered(startedAt);
+              status.refresh();
             }).catch(reportFrameFailure);
             return;
           }
@@ -373,9 +376,7 @@ export function activateProviderTerminalPlugin(
           throw new Error("rehydrate returned no frame or snapshot lease");
         }
         if (config.renderer?.delivery === "bytes") {
-          const startedAt = performance.now();
           await presenter.applySnapshot!(restored, false);
-          markRendered(startedAt);
         }
         const restoredSequence = Number(restored.uptoSeq);
         if (!Number.isSafeInteger(restoredSequence) || restoredSequence < 0) {
@@ -406,9 +407,7 @@ export function activateProviderTerminalPlugin(
         const data = requireReply(archived, "archived");
         if (config.renderer?.delivery === "bytes") {
           if (!presenter.applySnapshot) throw new Error("byte presenter cannot restore snapshots");
-          const startedAt = performance.now();
           await presenter.applySnapshot(data, true);
-          markRendered(startedAt);
         } else if (!applyFrame(data.frame)) throw new Error("archived returned no frame");
         const archivedSequence = Number(data.uptoSeq);
         if (!Number.isSafeInteger(archivedSequence) || archivedSequence < 0) {
@@ -456,6 +455,7 @@ export function activateProviderTerminalPlugin(
           window.removeEventListener("soksak:capture-prepare", capturePrepare);
           output?.dispose();
           io?.dispose();
+          presenterRendering?.dispose();
           viewDisposables.splice(0).forEach((item) => item.dispose());
           const attached = session;
           session = 0;

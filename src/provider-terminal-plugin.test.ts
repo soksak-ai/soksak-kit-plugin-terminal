@@ -159,6 +159,7 @@ describe("provider-backed terminal plugin", () => {
         create: (container) => ({
           root: container, size: () => ({ cols: 80, rows: 24 }),
           applySnapshot: async (snapshot) => { snapshots.push(snapshot); }, async writeOutput() {},
+          onRendered: () => ({ dispose() {} }),
           read: () => "", waitForText: async () => "", focus: () => true, dispose() {},
         }),
       },
