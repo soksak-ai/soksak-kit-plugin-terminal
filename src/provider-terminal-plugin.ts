@@ -176,6 +176,7 @@ export function activateProviderTerminalPlugin(
       let writable = false;
       let requestedSize: { cols: number; rows: number } | null = null;
       let startTask = Promise.resolve();
+      let writeQueue = Promise.resolve();
       let stopping: Promise<void> | null = null;
       let presentation: ReturnType<typeof createTerminalPresentationStatus>;
       let status: ReturnType<typeof createTerminalStatusController>;
@@ -185,9 +186,15 @@ export function activateProviderTerminalPlugin(
           status?.refresh();
         }
         if (!writable || !session) return;
-        void binding.write(session, text).then(() => {
+        const attached = session;
+        writeQueue = writeQueue.then(() => binding.write(attached, text)).then(() => {
           presentation.markPtyWrite();
           status.refresh();
+        }).catch((error) => {
+          if (!stopped) status?.set("blocked", {
+            failure: { code: "INPUT_WRITE_FAILED", message: String(error) },
+            fidelity: "unavailable",
+          });
         });
       };
       const framePresenter = config.renderer
@@ -470,10 +477,12 @@ export function activateProviderTerminalPlugin(
           presenterRendering?.dispose();
           viewDisposables.splice(0).forEach((item) => item.dispose());
           const attached = session;
+          const pendingWrites = writeQueue;
           session = 0;
           status.close();
           presenter.dispose();
           stopping = (async () => {
+            await pendingWrites;
             if (attached) await binding.detach(attached);
             await startTask.catch(() => {});
           })();
