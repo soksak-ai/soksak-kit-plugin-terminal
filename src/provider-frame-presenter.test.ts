@@ -30,7 +30,7 @@ describe("provider frame presenter", () => {
     const cursor = presenter.screen.querySelector<HTMLElement>('[data-cursor="true"]')!;
     expect(presenter.screen.dataset.cursorActive).toBe("false");
     expect(cursor.style.backgroundColor).toBe("var(--card)");
-    expect(cursor.style.outline).toContain("var(--acc)");
+    expect(cursor.style.outline).toContain("var(--soksak-terminal-cursor)");
   });
 
   it("uses the canonical palette for indexed colors and host tokens for defaults", () => {
