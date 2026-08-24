@@ -414,7 +414,7 @@ describe("provider-backed terminal plugin", () => {
     });
   });
 
-  it("coalesces output while one provider frame is in flight", async () => {
+  it("coalesces an output burst before requesting a provider frame", async () => {
     let view: { mount(container: HTMLElement, context: unknown): void } | undefined; let emit: ((bytes: Uint8Array) => void) | undefined;
     let release!: () => void; const blocked = new Promise<void>((resolve) => { release = resolve; });
     const frameSequences: number[] = [];
@@ -434,7 +434,7 @@ describe("provider-backed terminal plugin", () => {
     activateProviderTerminalPlugin(host, [], { pluginId:"p", engineId:"e", ptySidecarId: "soksak-sidecar-pty", terminalSidecarId:"soksak-sidecar-terminal-vt100", programId:"terminal-e" });
     const root=document.createElement("div"); view!.mount(root,{viewId:"pane"}); await vi.waitFor(()=>expect(emit).toBeTypeOf("function"));
     emit!(new Uint8Array([1])); emit!(new Uint8Array([2])); emit!(new Uint8Array([3])); release();
-    await vi.waitFor(()=>expect(frameSequences).toEqual([1,3]));
+    await vi.waitFor(()=>expect(frameSequences).toEqual([3]));
   });
 
 });
