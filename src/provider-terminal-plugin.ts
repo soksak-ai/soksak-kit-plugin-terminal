@@ -172,6 +172,7 @@ export function activateProviderTerminalPlugin(
       let requestedSequence = 0;
       let renderedSequence: number | null = null;
       let rendering = false;
+      let frameRequest: number | null = null;
       let writable = false;
       let requestedSize: { cols: number; rows: number } | null = null;
       let startTask = Promise.resolve();
@@ -267,20 +268,32 @@ export function activateProviderTerminalPlugin(
         return reply.data && typeof reply.data === "object"
           ? reply.data as Record<string, unknown> : {};
       };
+      const reportFrameFailure = (error: unknown) => {
+        if (stopped) return;
+        status.set("blocked", {
+          failure: { code: "FRAME_FAILED", message: String(error) }, fidelity: "unavailable",
+        });
+      };
+      const scheduleRenderLatest = () => {
+        if (frameRequest !== null || rendering || stopped
+            || requestedSequence <= (renderedSequence ?? -1)) return;
+        frameRequest = requestAnimationFrame(() => {
+          frameRequest = null;
+          void renderLatest().catch(reportFrameFailure);
+        });
+      };
       const renderLatest = async (): Promise<void> => {
         if (rendering || stopped || requestedSequence <= (renderedSequence ?? -1)) return;
         rendering = true;
         try {
-          while (!stopped && requestedSequence > (renderedSequence ?? -1)) {
-            const sequence = requestedSequence;
-            if (config.renderer?.delivery === "bytes") break;
+          const sequence = requestedSequence;
+          if (config.renderer?.delivery !== "bytes") {
             const response = await binding.recoveryRequest({ op: "frame", pane, afterSequence: sequence });
-            if (!applyFrameSnapshot(requireReply(response, "frame"))) {
-              throw new Error("frame response has no exact output sequence");
-            }
+            if (!applyFrameSnapshot(requireReply(response, "frame"))) throw new Error("frame response has no exact output sequence");
           }
         } finally {
           rendering = false;
+          scheduleRenderLatest();
         }
       };
       const resizeSession = async () => {
@@ -301,12 +314,6 @@ export function activateProviderTerminalPlugin(
           failure: { code: "RESIZE_FAILED", message: String(error) }, fidelity: "unavailable",
         });
       };
-      const reportFrameFailure = (error: unknown) => {
-        if (stopped) return;
-        status.set("blocked", {
-          failure: { code: "FRAME_FAILED", message: String(error) }, fidelity: "unavailable",
-        });
-      };
       const resizeWorker = createTerminalResizeWorker(resizeSession, reportResizeFailure);
       const requestResize = () => resizeWorker.request();
       const attach = (opened: number) => {
@@ -320,7 +327,7 @@ export function activateProviderTerminalPlugin(
             return;
           }
           requestedSequence = Math.max(requestedSequence, throughSeq);
-          void renderLatest().catch(reportFrameFailure);
+          scheduleRenderLatest();
         });
         writable = true;
         io = host.terminal?.registerIo?.(pane, {
@@ -449,6 +456,8 @@ export function activateProviderTerminalPlugin(
           if (stopping) return stopping;
           stopped = true;
           writable = false;
+          if (frameRequest !== null) cancelAnimationFrame(frameRequest);
+          frameRequest = null;
           resize.dispose();
           container.removeEventListener("focusin", focusChanged);
           container.removeEventListener("focusout", focusChanged);
