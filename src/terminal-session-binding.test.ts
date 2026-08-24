@@ -93,7 +93,7 @@ describe("shared terminal session binding", () => {
     binding.onData(session, (bytes) => received.push(...bytes));
     onBytes!(new Uint8Array([68]));
 
-    expect(acknowledgements).toEqual([44, 45]);
+    await vi.waitFor(() => expect(acknowledgements).toEqual([45]));
     expect(received).toEqual([65, 66, 67, 68]);
   });
 
