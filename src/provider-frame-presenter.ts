@@ -160,7 +160,9 @@ export function createProviderFramePresenter(
   input.addEventListener("focus", updateCursor);
   input.addEventListener("blur", updateCursor);
   screen.addEventListener("mousedown", (event) => {
-    if (event.button === 0) input.focus({ preventScroll: true });
+    if (event.button !== 0) return;
+    event.preventDefault();
+    input.focus({ preventScroll: true });
   });
   return {
     root: container, screen, input,
