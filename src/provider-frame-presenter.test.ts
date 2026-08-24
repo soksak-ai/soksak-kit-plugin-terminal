@@ -48,6 +48,18 @@ describe("provider frame presenter", () => {
     expect(spans[2].style.color).toBe("rgb(238, 238, 236)");
   });
 
+  it("maps bold base foreground colors to the canonical bright palette", () => {
+    const presenter = createProviderFramePresenter(document.createElement("div"), vi.fn());
+    presenter.render({ cols: 2, rows: 1, cursor: [0, 0], cursor_visible: false, alt_active: false, lines: [[
+      { text: "R", fg: "palette:1", bg: "palette:2", attrs: 0, wide: false },
+      { text: "B", fg: "palette:1", bg: "palette:2", attrs: 1, wide: false },
+    ]] });
+    const spans = Array.from(presenter.screen.querySelectorAll<HTMLElement>("span"));
+    expect(spans[0].style.color).toBe("rgb(204, 0, 0)");
+    expect(spans[1].style.color).toBe("rgb(239, 41, 41)");
+    expect(spans[1].style.backgroundColor).toBe("rgb(78, 154, 6)");
+  });
+
   it("preserves row and run nodes when the next frame updates their content", () => {
     const presenter = createProviderFramePresenter(document.createElement("div"), vi.fn());
     const first = { cols: 2, rows: 1, cursor: [0, 1] as [number, number], cursor_visible: true, alt_active: false, lines: [[
