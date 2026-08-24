@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import {
+  assertPortableDependencyArchive,
+  assertPortableDependencyMetadata,
+} from "./portable-dependency-metadata.mjs";
 
 const root = join(import.meta.dirname, "..");
 
@@ -47,4 +51,27 @@ test("repository owns public metadata", () => {
 test("portable release includes the presentation status owner", () => {
   const releaseFiles = JSON.parse(readFileSync(join(root, "release-files.json"), "utf8"));
   assert.ok(releaseFiles.includes("src/terminal-presentation-status.ts"));
+});
+
+test("source metadata refuses external local dependency topology", () => {
+  assert.doesNotThrow(() => assertPortableDependencyMetadata(root));
+  assert.throws(
+    () => assertPortableDependencyMetadata(root, {
+      packageText: JSON.stringify({ dependencies: { contract: "file:/tmp/contract.tgz" } }),
+      lockText: "lockfileVersion: '9.0'\n",
+    }),
+    /external local dependency/,
+  );
+  assert.throws(
+    () => assertPortableDependencyMetadata(root, {
+      packageText: JSON.stringify({ devDependencies: { contract: "file:../../../../../contract.tgz" } }),
+      lockText: "lockfileVersion: '9.0'\n",
+    }),
+    /external local dependency/,
+  );
+});
+
+test("portable archive refuses embedded local dependency topology", () => {
+  const archive = process.env.SOKSAK_TEST_PORTABLE_ARCHIVE;
+  if (archive) assert.doesNotThrow(() => assertPortableDependencyArchive(archive));
 });
