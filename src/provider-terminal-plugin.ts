@@ -623,6 +623,9 @@ export function activateProviderTerminalPlugin(
     colsLessThan: { type: "number", description: { en: "Terminal columns below this value", ko: "이 값보다 작은 터미널 열 수" } },
     colsGreaterThan: { type: "number", description: { en: "Terminal columns above this value", ko: "이 값보다 큰 터미널 열 수" } },
     rows: { type: "number", description: { en: "Exact terminal rows", ko: "정확한 터미널 행 수" } },
+    focusedInput: { type: "boolean", description: { en: "Focused input state", ko: "입력 포커스 상태" } },
+    cursorVisible: { type: "boolean", description: { en: "Visible cursor state", ko: "커서 표시 상태" } },
+    cursorActive: { type: "boolean", description: { en: "Active cursor state", ko: "활성 커서 상태" } },
     view: viewParam,
   }, async (params, context) => {
     const screen = target(params, context);
@@ -634,6 +637,11 @@ export function activateProviderTerminalPlugin(
       contains: typeof params.contains === "string" && params.contains !== ""
         ? params.contains : undefined,
       timeoutMs, waitForText: screen.presenter.waitForText,
+      presentation: {
+        ...(typeof params.focusedInput === "boolean" ? { focusedInput: params.focusedInput } : {}),
+        ...(typeof params.cursorVisible === "boolean" ? { cursorVisible: params.cursorVisible } : {}),
+        ...(typeof params.cursorActive === "boolean" ? { cursorActive: params.cursorActive } : {}),
+      },
       size: {
         ...(typeof params.cols === "number" ? { cols: params.cols } : {}),
         ...(typeof params.colsLessThan === "number" ? { colsLessThan: params.colsLessThan } : {}),

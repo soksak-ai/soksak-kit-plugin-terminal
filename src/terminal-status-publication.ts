@@ -21,7 +21,11 @@ export interface TerminalStatusController {
   }): TerminalPluginPublicStatus;
   current(): TerminalPluginPublicStatus;
   refresh(): TerminalPluginPublicStatus;
-  wait(phases: readonly TerminalPluginPhase[], timeoutMs: number): Promise<TerminalPluginPublicStatus>;
+  wait(
+    phases: readonly TerminalPluginPhase[],
+    timeoutMs: number,
+    predicate?: (status: TerminalPluginPublicStatus) => boolean,
+  ): Promise<TerminalPluginPublicStatus>;
   close(): TerminalPluginPublicStatus;
 }
 
@@ -69,16 +73,17 @@ export function createTerminalStatusController(
       failure: status.failure ? { ...status.failure } : null,
     }),
     refresh: publish,
-    wait(phases, timeoutMs) {
+    wait(phases, timeoutMs, predicate) {
       const accepted = new Set(phases);
-      if (accepted.has(status.phase)) return Promise.resolve(this.current());
+      const current = this.current();
+      if (accepted.has(current.phase) && (!predicate || predicate(current))) return Promise.resolve(current);
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           listeners.delete(onStatus);
           reject(new Error(`terminal phase wait timed out after ${timeoutMs}ms`));
         }, timeoutMs);
         const onStatus = (next: TerminalPluginPublicStatus) => {
-          if (!accepted.has(next.phase)) return;
+          if (!accepted.has(next.phase) || (predicate && !predicate(next))) return;
           clearTimeout(timer);
           listeners.delete(onStatus);
           resolve(next);
