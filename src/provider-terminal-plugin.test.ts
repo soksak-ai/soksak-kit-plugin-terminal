@@ -15,6 +15,7 @@ describe("provider-backed terminal plugin", () => {
     const commands = new Map<string, Record<string, unknown>>();
     const snapshots: Record<string, unknown>[] = [];
     const output: Uint8Array[] = [];
+    let rendered: ((durationMs: number) => void) | undefined;
     const channel = {
       send: vi.fn(async (request: Record<string, unknown>) => {
         const command = String(request.command);
@@ -51,6 +52,7 @@ describe("provider-backed terminal plugin", () => {
         fit() {},
         applySnapshot: async (snapshot) => { snapshots.push(snapshot); },
         writeOutput: async (bytes) => { output.push(bytes); },
+        onRendered: (callback) => { rendered = callback; return { dispose() {} }; },
         read: () => "A",
         waitForText: async () => "A",
         focus: () => true,
@@ -68,8 +70,15 @@ describe("provider-backed terminal plugin", () => {
       params: Record<string, unknown>, context: { pane: string },
     ) => Promise<Record<string, unknown>>)({ view: "pane" }, { pane: "pane" });
     expect(status.presentation).toMatchObject({
-      delivery: "bytes", readySequence: 1, renderSequence: 1,
+      delivery: "bytes", readySequence: 1, renderSequence: 0,
       acceptedInputSequence: 0, ptyWriteSequence: 0,
+    });
+    rendered!(6);
+    const painted = await (commands.get("status")!.handler as (
+      params: Record<string, unknown>, context: { pane: string },
+    ) => Promise<Record<string, unknown>>)({ view: "pane" }, { pane: "pane" });
+    expect(painted.presentation).toMatchObject({
+      renderSequence: 1, lastRenderDurationMs: 6,
     });
   });
 

@@ -70,6 +70,7 @@ export interface TerminalPresenter {
   renderFrame?(frame: ProviderFrame): void;
   applySnapshot?(snapshot: Record<string, unknown>, archived: boolean): Promise<void> | void;
   writeOutput?(bytes: Uint8Array): Promise<void>;
+  onRendered?(callback: (durationMs: number) => void): { dispose(): void };
   read(lines?: number): string;
   waitForText(contains: string, timeoutMs: number): Promise<string>;
   focus(): boolean;
