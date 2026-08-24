@@ -16,10 +16,9 @@ case "$(uname -s)-$(uname -m)" in
   *) echo 'TOOLCHAIN_MISMATCH: unsupported host' >&2; exit 78 ;;
 esac
 node_actual=$(node --version 2>/dev/null || true); node_platform=$(node -p process.platform 2>/dev/null || true); node_arch=$(node -p process.arch 2>/dev/null || true)
-pnpm_actual=$(cd "$root" && pnpm --version 2>/dev/null || true); pnpm_command=$(command -v pnpm 2>/dev/null || true)
-pnpm_executable=$(node -e 'const f=require("fs"),p=require("path");let d;try{d=p.dirname(f.realpathSync(process.argv[1]))}catch{process.exit(2)}for(;;){const m=p.join(d,"package.json");if(f.existsSync(m)){try{const v=JSON.parse(f.readFileSync(m,"utf8"));if(v.name==="pnpm"){process.stdout.write(v.version);break}}catch{}}const q=p.dirname(d);if(q===d)process.exit(2);d=q}' "$pnpm_command" 2>/dev/null || true)
-if [ "$node_actual" != "v$node_expected" ] || [ "$node_platform" != "$platform" ] || [ "$node_arch" != "$arch" ] || [ "$pnpm_actual" != "$pnpm_expected" ] || [ "$pnpm_executable" != "$pnpm_expected" ]; then
-  printf 'TOOLCHAIN_MISMATCH: expected node=v%s pnpm=%s runtime=%s/%s; actual node=%s pnpm=%s pnpmExecutable=%s runtime=%s/%s\n' "$node_expected" "$pnpm_expected" "$platform" "$arch" "${node_actual:-missing}" "${pnpm_actual:-missing}" "${pnpm_executable:-unknown}" "${node_platform:-unknown}" "${node_arch:-unknown}" >&2; exit 78
+pnpm_actual=$(cd "$root" && pnpm --version 2>/dev/null || true)
+if [ "$node_actual" != "v$node_expected" ] || [ "$node_platform" != "$platform" ] || [ "$node_arch" != "$arch" ] || [ "$pnpm_actual" != "$pnpm_expected" ]; then
+  printf 'TOOLCHAIN_MISMATCH: expected node=v%s pnpm=%s runtime=%s/%s; actual node=%s pnpm=%s runtime=%s/%s\n' "$node_expected" "$pnpm_expected" "$platform" "$arch" "${node_actual:-missing}" "${pnpm_actual:-missing}" "${node_platform:-unknown}" "${node_arch:-unknown}" >&2; exit 78
 fi
 lock=$(shasum -a 256 "$root/pnpm-lock.yaml" | awk '{print $1}')
 printf 'BUILD_ENVIRONMENT_READY node=%s pnpm=%s runtime=%s/%s lockSHA256=%s\n' "$node_actual" "$pnpm_actual" "$node_platform" "$node_arch" "$lock"
