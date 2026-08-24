@@ -46,6 +46,11 @@ test("repository owns public metadata", () => {
   assert.match(workflow, /f3311f6e20069667486e753e8669e7f7787f197f47e4a94e14207a066c2db32c/);
   assert.doesNotMatch(workflow, /repository: soksak-ai\/soksak-spec/);
   assert.match(workflow, /owner-enforced immutable releases must be enabled/);
+  assert.match(
+    workflow,
+    /portable-dependency-metadata[.]mjs[^\n]*artifacts/,
+    "release workflow does not reject local dependency metadata inside its archives",
+  );
 });
 
 test("portable release includes the presentation status owner", () => {
