@@ -226,6 +226,14 @@ export function activateProviderTerminalPlugin(
         },
         presentation: presentation.current,
       });
+      const focusChanged = (event: FocusEvent) => {
+        const node = event.target instanceof HTMLElement ? event.target.dataset.node : undefined;
+        if (node !== "terminal-input") return;
+        presentation.markFocused(event.type === "focusin");
+        status.refresh();
+      };
+      container.addEventListener("focusin", focusChanged);
+      container.addEventListener("focusout", focusChanged);
 
       const markRendered = (startedAt: number) => {
         presentation.markRendered(Math.max(0, performance.now() - startedAt));
@@ -442,6 +450,8 @@ export function activateProviderTerminalPlugin(
           stopped = true;
           writable = false;
           resize.dispose();
+          container.removeEventListener("focusin", focusChanged);
+          container.removeEventListener("focusout", focusChanged);
           window.removeEventListener("soksak:capture-prepare", capturePrepare);
           output?.dispose();
           io?.dispose();

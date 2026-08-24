@@ -5,6 +5,7 @@ let nextMountSequence = 0;
 export interface TerminalPresentationStatusController {
   markReady(): void;
   markRendered(durationMs: number): void;
+  markFocused(focused: boolean): void;
   markInputAccepted(): void;
   markPtyWrite(): void;
   current(): TerminalPresentationStatus;
@@ -19,11 +20,13 @@ export function createTerminalPresentationStatus(
   const mountSequence = ++nextMountSequence;
   let readySequence: number | null = null;
   let renderSequence = 0;
+  let focusSequence = 0;
   let acceptedInputSequence = 0;
   let ptyWriteSequence = 0;
   let firstVisibleFrameAtUnixMs: number | null = null;
   let firstFocusableInputAtUnixMs: number | null = null;
   let lastRenderedAtUnixMs: number | null = null;
+  let lastFocusedAtUnixMs: number | null = null;
   let lastInputAtUnixMs: number | null = null;
   let lastPtyWriteAtUnixMs: number | null = null;
   let lastRenderDurationMs: number | null = null;
@@ -41,6 +44,7 @@ export function createTerminalPresentationStatus(
       mountSequence,
       readySequence,
       renderSequence,
+      focusSequence,
       acceptedInputSequence,
       ptyWriteSequence,
       focusedInput: input != null && input.ownerDocument.activeElement === input,
@@ -52,6 +56,7 @@ export function createTerminalPresentationStatus(
       firstVisibleFrameAtUnixMs,
       firstFocusableInputAtUnixMs,
       lastRenderedAtUnixMs,
+      lastFocusedAtUnixMs,
       lastInputAtUnixMs,
       lastPtyWriteAtUnixMs,
       lastRenderDurationMs,
@@ -70,6 +75,11 @@ export function createTerminalPresentationStatus(
       maxRenderDurationMs = Math.max(maxRenderDurationMs ?? 0, durationMs);
       lastRenderedAtUnixMs = now();
       firstVisibleFrameAtUnixMs ??= lastRenderedAtUnixMs;
+    },
+    markFocused(focused) {
+      if (!focused) return;
+      focusSequence += 1;
+      lastFocusedAtUnixMs = now();
     },
     markInputAccepted() {
       acceptedInputSequence += 1;
@@ -94,6 +104,7 @@ export function closedTerminalPresentation(
     mountSequence: 0,
     readySequence: null,
     renderSequence: 0,
+    focusSequence: 0,
     acceptedInputSequence: 0,
     ptyWriteSequence: 0,
     focusedInput: false,
@@ -105,6 +116,7 @@ export function closedTerminalPresentation(
     firstVisibleFrameAtUnixMs: null,
     firstFocusableInputAtUnixMs: null,
     lastRenderedAtUnixMs: null,
+    lastFocusedAtUnixMs: null,
     lastInputAtUnixMs: null,
     lastPtyWriteAtUnixMs: null,
     lastRenderDurationMs: null,

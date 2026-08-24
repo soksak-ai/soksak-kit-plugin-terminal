@@ -41,6 +41,7 @@ describe("terminal presentation status", () => {
     const input = document.createElement("textarea");
     input.dataset.node = "terminal-input";
     root.append(input);
+    document.body.append(root);
     const status = createTerminalPresentationStatus(root, "frame", () => wall) as ReturnType<typeof createTerminalPresentationStatus> & {
       markFocused(focused: boolean): void;
     };
