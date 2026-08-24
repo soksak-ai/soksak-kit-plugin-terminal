@@ -55,6 +55,8 @@ describe("provider frame presenter", () => {
     expect(presenter.screen.style.getPropertyValue("--soksak-terminal-cursor")).toBe("var(--acc)");
     expect(presenter.screen.style.getPropertyValue("--soksak-terminal-cursor-accent")).toBe("var(--card)");
     expect(presenter.screen.style.getPropertyValue("--soksak-terminal-selection-background")).toBe("var(--fg3)");
+    expect(presenter.screen.style.getPropertyValue("--soksak-terminal-ansi-0")).toBe("#2e3436");
+    expect(presenter.screen.style.getPropertyValue("--soksak-terminal-ansi-255")).toBe("#eeeeee");
   });
 
   it("maps bold base foreground colors to the canonical bright palette", () => {
