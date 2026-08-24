@@ -18,6 +18,47 @@ describe("provider frame presenter", () => {
     presenter.input.value = "x"; presenter.input.dispatchEvent(new Event("input")); expect(send).toHaveBeenCalledWith("x");
   });
 
+  it("transfers a real screen click to the terminal input owner", () => {
+    const root = document.createElement("div"); document.body.append(root);
+    const presenter = createProviderFramePresenter(root, vi.fn());
+    presenter.screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    expect(document.activeElement).toBe(presenter.input);
+    expect(presenter.input.dataset.focused).toBe("true");
+    expect(presenter.screen.dataset.cursorActive).toBe("true");
+  });
+
+  it("uses the canonical palette for indexed colors and host tokens for defaults", () => {
+    const presenter = createProviderFramePresenter(document.createElement("div"), vi.fn());
+    presenter.render({ cols: 3, rows: 1, cursor: [0, 2], alt_active: false, lines: [[
+      { text: "D", fg: "default", bg: "default", attrs: 0, wide: false },
+      { text: "R", fg: "palette:1", bg: "palette:0", attrs: 0, wide: false },
+      { text: "W", fg: "palette:15", bg: "default", attrs: 0, wide: false },
+    ]] });
+    const spans = [...presenter.screen.querySelectorAll("span")];
+    expect(spans[0].style.color).toBe("var(--fg)");
+    expect(spans[0].style.backgroundColor).toBe("var(--card)");
+    expect(spans[1].style.color).toBe("rgb(204, 0, 0)");
+    expect(spans[1].style.backgroundColor).toBe("rgb(46, 52, 54)");
+    expect(spans[2].style.color).toBe("rgb(238, 238, 236)");
+  });
+
+  it("preserves row and run nodes when the next frame updates their content", () => {
+    const presenter = createProviderFramePresenter(document.createElement("div"), vi.fn());
+    const first = { cols: 2, rows: 1, cursor: [0, 1] as [number, number], alt_active: false, lines: [[
+      { text: "A", fg: "default", bg: "default", attrs: 0, wide: false },
+      { text: "B", fg: "default", bg: "default", attrs: 0, wide: false },
+    ]] };
+    presenter.render(first);
+    const row = presenter.screen.firstElementChild;
+    const run = row?.firstElementChild;
+    presenter.render({ ...first, lines: [[
+      first.lines[0][0], { ...first.lines[0][1], text: "C" },
+    ]] });
+    expect(presenter.screen.firstElementChild).toBe(row);
+    expect(presenter.screen.firstElementChild?.firstElementChild).toBe(run);
+    expect(presenter.read()).toBe("AC");
+  });
+
   it("waits for rendered text without sampling", async () => {
     const presenter = createProviderFramePresenter(document.createElement("div"), vi.fn());
     const found = presenter.waitForText("ready", 100);
