@@ -21,14 +21,15 @@ export interface ProviderFramePresenter {
 
 type RenderRun = { text: string; fg: string; bg: string; attrs: number; cursor: boolean };
 
-function indexedColor(value: string): string {
+function indexedColor(value: string, bold = false): string {
   if (value === "default") return "";
   if (value.startsWith("#")) return value;
   if (!value.startsWith("palette:")) throw new Error(`invalid terminal color ${value}`);
-  const index = Number(value.slice("palette:".length));
+  let index = Number(value.slice("palette:".length));
   if (!Number.isInteger(index) || index < 0 || index >= TERMINAL_ANSI_PALETTE.length) {
     throw new Error(`invalid terminal palette index ${value}`);
   }
+  if (bold && index < 8) index += 8;
   return TERMINAL_ANSI_PALETTE[index];
 }
 
@@ -68,7 +69,8 @@ function applyRun(span: HTMLSpanElement, run: RenderRun): void {
   span.dataset.attrs = String(run.attrs);
   if (run.cursor) span.dataset.cursor = "true";
   else delete span.dataset.cursor;
-  span.style.color = indexedColor(run.fg) || "var(--fg)";
+  const bold = (run.attrs & 1) !== 0;
+  span.style.color = indexedColor(run.fg, bold) || "var(--fg)";
   span.style.backgroundColor = indexedColor(run.bg) || "var(--card)";
   span.style.fontWeight = run.attrs & 1 ? "700" : "";
   span.style.fontStyle = run.attrs & 4 ? "italic" : "";
@@ -141,7 +143,8 @@ export function createProviderFramePresenter(
     screen.dataset.cursorActive = String(cursorVisible && focused);
     const cursor = screen.querySelector<HTMLElement>('[data-cursor="true"]');
     if (!cursor) return;
-    cursor.style.color = indexedColor(cursor.dataset.fg ?? "default") || "var(--fg)";
+    const attrs = Number(cursor.dataset.attrs ?? "0");
+    cursor.style.color = indexedColor(cursor.dataset.fg ?? "default", (attrs & 1) !== 0) || "var(--fg)";
     cursor.style.backgroundColor = indexedColor(cursor.dataset.bg ?? "default") || "var(--card)";
     cursor.style.outline = cursorVisible && !focused ? "1px solid var(--acc)" : "";
     if (cursorVisible && focused) {
