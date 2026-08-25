@@ -14,6 +14,40 @@ for (const [name, value] of Object.entries({
 const settledClose = () => ({ dispose() {}, settled: Promise.resolve() });
 
 describe("provider-backed terminal plugin", () => {
+  it("rejects a corrupt archive but starts a fresh writable terminal with visible failure status", async () => {
+    let view: { mount(container: HTMLElement, context: unknown): void } | undefined;
+    const commands = new Map<string, Record<string, unknown>>();
+    const pty = {
+      send: vi.fn(async (request: Record<string, unknown>) => {
+        const command = String(request.command);
+        const data = command === "pty.pane" ? { held: false } : command === "pty.open" ? { session: 7 } : {};
+        return { ok: true, result: { data } };
+      }),
+      stream: vi.fn(async () => ({ answer: { ok: true, result: { data: { startSeq: 0 } } }, close: settledClose() })),
+    };
+    const recovery = {
+      send: vi.fn(async (request: Record<string, unknown>) => {
+        const command = String(request.command);
+        if (command === "terminal.archived") return { ok: false, error: "missing cursor_visible", result: { code: "CHECKPOINT_CORRUPT" } };
+        const data = command === "terminal.prepareSession" ? { observerToken: "observer" } : {};
+        return { ok: true, result: { data } };
+      }),
+      stream: vi.fn(),
+    };
+    const host: ProviderTerminalPluginHost = {
+      windowLabel: () => "window", secrets: { generate: async () => ({ created: true }) },
+      sidecar: { open: async (name) => name === "soksak-sidecar-pty" ? pty : recovery },
+      ui: { registerView: (_id, provider) => { view = provider; return { dispose() {} }; } },
+      commands: { register: (name, spec) => { commands.set(name, spec); return { dispose() {} }; }, execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
+    };
+    activateProviderTerminalPlugin(host, [], { pluginId: "plugin", engineId: "vt100", ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-vt100", programId: "terminal-vt100" });
+    const root = document.createElement("div"); document.body.append(root); view!.mount(root, { viewId: "pane" });
+    await vi.waitFor(() => expect(root.dataset.terminalPhase).toBe("live"));
+    const status = await (commands.get("status")!.handler as (params: Record<string, unknown>, context: { pane: string }) => Promise<Record<string, unknown>>)({ view: "pane" }, { pane: "pane" });
+    expect(status).toMatchObject({ phase: "live", recoveryOutcome: "fresh", fidelity: "complete", failure: { code: "CHECKPOINT_REJECTED", message: "missing cursor_visible" } });
+    expect(root.dataset.terminalFailure).toBe("CHECKPOINT_REJECTED");
+  });
+
   it("keeps the recorded startup failure readable when diagnostics cannot open a sidecar", async () => {
     let view: { mount(container: HTMLElement, context: unknown): void } | undefined;
     const commands = new Map<string, Record<string, unknown>>();

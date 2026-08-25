@@ -457,6 +457,13 @@ export function activateProviderTerminalPlugin(
         if (stopped) return true;
         if (archived.ok !== true) {
           if (archived.code === "NOT_FOUND") return false;
+          if (archived.code === "CHECKPOINT_CORRUPT") {
+            status.set("preparing-recovery", {
+              recoveryOutcome: "fresh", fidelity: "unavailable",
+              failure: { code: "CHECKPOINT_REJECTED", message: String(archived.message ?? "checkpoint is corrupt") },
+            });
+            return false;
+          }
           requireReply(archived, "archived");
         }
         const data = requireReply(archived, "archived");
