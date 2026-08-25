@@ -101,6 +101,12 @@ test("Makefile packs and publishes with pnpm from command-line OUT and REGISTRY"
   assert.match(makefile, /^prepare: guard preflight$/m);
   assert.match(makefile, /pnpm install --frozen-lockfile \$\(if \$\(findstring command line,\$\(origin REGISTRY\)\),\$\(registry_flags\)\)/);
   assert.match(makefile, /shasum -a 256 pnpm-workspace\.yaml/);
+  // pnpm 11 re-runs a bare install before `pnpm <script>` when the workspace state disagrees with the
+  // current settings; every script invocation repeats the install environment and registry flags.
+  for (const script of ["build", "test", "typecheck"]) {
+    assert.match(makefile, new RegExp(`^\t@CI=1 PNPM_DISABLE_SELF_UPDATE_CHECK=1 pnpm \\$\\(if \\$\\(findstring command line,\\$\\(origin REGISTRY\\)\\),\\$\\(registry_flags\\)\\) ${script}$`, "m"), script);
+  }
+  assert.doesNotMatch(makefile, /^\t@pnpm (build|test|typecheck)$/m);
   assert.match(makefile, /^release: require-out verify$/m);
   assert.match(makefile, /pnpm pack --pack-destination "\$\(OUT\)"/);
   assert.match(makefile, /shasum -a 256 "\$\(tarball\)"/);
