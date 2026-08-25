@@ -126,6 +126,10 @@ export function activateProviderTerminalPlugin(
       }
     },
   });
+  const diagnosticsOrEmpty = async () => {
+    try { return await binding.diagnostics(); }
+    catch { return { pty: {}, recovery: {} }; }
+  };
   const windowGone = host.events?.on("window.gone", (payload?: { windowLabel?: string }) => {
     const windowLabel = payload?.windowLabel;
     if (typeof windowLabel === "string" && windowLabel !== "") void binding.closeWindow(windowLabel);
@@ -601,7 +605,7 @@ export function activateProviderTerminalPlugin(
         requested: screen.requestedSize, rendered: rendered.cols > 0 && rendered.rows > 0 ? rendered : null,
         renderedOutputSequence: screen.renderedOutputSequence,
         operation: screen.presenter.root.dataset.terminalOperation ?? "unknown",
-        diagnostics: await binding.diagnostics(),
+        diagnostics: await diagnosticsOrEmpty(),
       }),
     };
   });
@@ -700,7 +704,7 @@ export function activateProviderTerminalPlugin(
         requested: screen.requestedSize, rendered: rendered.cols > 0 && rendered.rows > 0 ? rendered : null,
         renderedOutputSequence: screen.renderedOutputSequence,
         operation: screen.presenter.root.dataset.terminalOperation ?? "unknown",
-        diagnostics: await binding.diagnostics(),
+        diagnostics: await diagnosticsOrEmpty(),
       }),
     };
   });

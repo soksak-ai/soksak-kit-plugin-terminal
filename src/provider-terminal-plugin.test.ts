@@ -14,6 +14,34 @@ for (const [name, value] of Object.entries({
 const settledClose = () => ({ dispose() {}, settled: Promise.resolve() });
 
 describe("provider-backed terminal plugin", () => {
+  it("keeps the recorded startup failure readable when diagnostics cannot open a sidecar", async () => {
+    let view: { mount(container: HTMLElement, context: unknown): void } | undefined;
+    const commands = new Map<string, Record<string, unknown>>();
+    const host: ProviderTerminalPluginHost = {
+      windowLabel: () => "window",
+      sidecar: { open: async () => { throw new Error("DEPENDENCY_VERSION_CONFLICT: terminal-state requires 0.0.12, selected 0.0.13"); } },
+      ui: { registerView: (_id, provider) => { view = provider; return { dispose() {} }; } },
+      commands: {
+        register: (name, spec) => { commands.set(name, spec); return { dispose() {} }; },
+        execute: async () => ({ data: { loginShell: "/bin/zsh" } }),
+      },
+    };
+    activateProviderTerminalPlugin(host, [], {
+      pluginId: "plugin", engineId: "vt100", ptySidecarId: "soksak-sidecar-pty",
+      terminalSidecarId: "soksak-sidecar-terminal-vt100", programId: "terminal-vt100",
+    });
+    const root = document.createElement("div"); document.body.append(root);
+    view!.mount(root, { viewId: "pane" });
+    await vi.waitFor(() => expect(root.dataset.terminalPhase).toBe("blocked"));
+    await expect((commands.get("status")!.handler as (
+      params: Record<string, unknown>, context: { pane: string },
+    ) => Promise<Record<string, unknown>>)({ view: "pane" }, { pane: "pane" })).resolves.toMatchObject({
+      phase: "blocked",
+      failure: { code: "START_FAILED", message: expect.stringContaining("DEPENDENCY_VERSION_CONFLICT") },
+      pty: null, recovery: null,
+    });
+  });
+
   it("owns standard commands and session lifecycle for a byte presenter", async () => {
     let view: { mount(container: HTMLElement, context: unknown): void } | undefined;
     const commands = new Map<string, Record<string, unknown>>();
