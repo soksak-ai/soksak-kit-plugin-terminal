@@ -20,6 +20,31 @@ The public screen also carries all 256 contract palette entries as indexed CSS c
 allowing installed-product parity checks to read computed style without treating screenshots as an
 automated oracle.
 
+## What a pane does when it loses its terminal
+
+A pane is where a shell runs, and it keeps that true on its own.
+
+- Closing a pane ends its session; unmounting one keeps the session so a remount reattaches to it.
+- A write that fails, and a frame the engine has no mirror for, are a session that went away: the
+  pane starts one again. The first try is immediate and every try after it waits, up to half a
+  minute, so a pane waiting for something outside itself does not cost the whole application.
+- A pane whose session ended shows what was archived and then starts a shell, rather than standing
+  as a picture of one that ended. An engine that missed part of the output cannot rebuild the screen
+  that was lost, so the pane attaches to the shell instead of failing on the gap.
+- A pane is live when it has a session. Reporting live without one hands every later keystroke to a
+  number nothing serves.
+- A pane that came back clears the failure it recovered from. One it did not recover from — a
+  rejected checkpoint — stays.
+- A pane that is not live states the phase inside itself: a blank screen alone is a pane the reader
+  cannot tell apart from an idle shell.
+
+## What is not painted
+
+A pane the layout hides, and every pane of a view the host is not showing, asks for no frames. The
+sessions and their output are kept, and a frame is asked for again when the pane is shown. Measured
+2026-08-26: a hidden pane went from 195 frames in 4 seconds to none, and the window's rendering
+process from 92.7% to 32.3% of a core.
+
 ## Stream sequence rule
 
 PTY output is ordered by one absolute source sequence. A stream attachment establishes its
