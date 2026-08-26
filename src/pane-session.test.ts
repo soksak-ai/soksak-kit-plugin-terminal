@@ -251,3 +251,22 @@ describe("scrolling a byte-delivery pane", () => {
     await expect(pane.scroll({ offset: 500 })).resolves.toMatchObject({ offset: 120 });
   });
 });
+
+// Detaching keeps a session for the pane to reattach to; closing ends it. A pane the caller closed
+// is never coming back, so its session and its shell end with it.
+describe("ending a pane", () => {
+  it("detaches when the pane is only unmounted and closes when the pane is gone", async () => {
+    const { binding } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    const first = mount(binding);
+    await vi.waitFor(() => expect(first.pane.status.current().phase).toBe("live"));
+    await first.pane.stop();
+    expect(binding.detach).toHaveBeenCalledTimes(1);
+    expect(binding.close).not.toHaveBeenCalled();
+
+    const second = mount(binding);
+    await vi.waitFor(() => expect(second.pane.status.current().phase).toBe("live"));
+    await second.pane.stop("close");
+    expect(binding.close).toHaveBeenCalledTimes(1);
+    expect(binding.detach).toHaveBeenCalledTimes(1);
+  });
+});

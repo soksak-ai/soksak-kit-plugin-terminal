@@ -168,15 +168,16 @@ describe("pane set", () => {
     expect(() => set.openPane({ root: paneRoot(), key: "tab-b.1" })).toThrow("does not belong to view tab-a");
   });
 
-  it("detaches a closed pane and moves focus to a remaining one", async () => {
-    const { set, detached, container, paneRoot } = setup();
+  it("ends a closed pane's session and moves focus to a remaining one", async () => {
+    const { set, binding, container, paneRoot } = setup();
     const first = set.openPane({ root: paneRoot() });
     set.openPane({ root: paneRoot() });
     await vi.waitFor(() => expect(first.status.current().phase).toBe("live"));
     expect(container.dataset.terminalPhase).toBe("live");
     expect(set.focused()?.key).toBe("tab-a.1");
     await expect(set.closePane("tab-a.1")).resolves.toBe(true);
-    expect(detached).toEqual([1]);
+    expect(binding.close).toHaveBeenCalledWith(1);
+    expect(binding.detach).not.toHaveBeenCalled();
     expect(set.get("tab-a.1")).toBeUndefined();
     expect(set.focused()?.key).toBe("tab-a.2");
     await expect(set.closePane("tab-a.1")).resolves.toBe(false);
@@ -189,5 +190,18 @@ describe("pane set", () => {
     expect(opens[0]).toMatchObject({
       paneId: "tab-a.1", options: { cwd: "/work", env: { SOKSAK_CALLER_PANE: "tab-a.1" } },
     });
+  });
+});
+
+// A pane the caller closed is gone: its session ends with it, so nothing keeps a shell alive for a
+// pane that will never be shown again.
+describe("closing a pane", () => {
+  it("ends the session rather than leaving it for a reattach", async () => {
+    const { set, binding } = setup();
+    const opened = await set.openPane({ key: "tab-a.1", root: document.createElement("div") });
+    await vi.waitFor(() => expect(opened.status.current().phase).toBe("live"));
+    await set.closePane("tab-a.1");
+    expect(binding.close).toHaveBeenCalledTimes(1);
+    expect(binding.detach).not.toHaveBeenCalled();
   });
 });

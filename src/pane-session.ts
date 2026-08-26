@@ -103,7 +103,8 @@ export interface PaneSession {
   lastCwdReport(): Uint8Array | null;
   cwd(): string | null;
   requestResize(): void;
-  stop(): Promise<void>;
+  // "detach" keeps the session for the pane to reattach to; "close" ends it with the pane.
+  stop(intent?: "detach" | "close"): Promise<void>;
 }
 
 export const CALLER_PANE_ENV = "SOKSAK_CALLER_PANE";
@@ -594,7 +595,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       }
     },
     requestResize,
-    stop() {
+    stop(intent = "detach") {
       if (stopping) return stopping;
       stopped = true;
       writable = false;
@@ -617,7 +618,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       presenter.dispose();
       stopping = (async () => {
         await pendingWrites;
-        if (attached) await binding.detach(attached);
+        if (attached) await (intent === "close" ? binding.close(attached) : binding.detach(attached));
         await startTask.catch(() => {});
       })();
       return stopping;
