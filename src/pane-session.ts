@@ -394,6 +394,11 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     tail = joined;
   };
   const attach = (opened: number) => {
+    // A pane is live when it has a session. A number that is not one is not a session, and writing
+    // to it hands every keystroke to something nothing serves.
+    if (!Number.isSafeInteger(opened) || opened < 1) {
+      throw new Error(`pty returned no session for pane ${key}`);
+    }
     session = opened;
     output = binding.onData(session, (chunk, throughSeq) => {
       lastOutputAt = now();

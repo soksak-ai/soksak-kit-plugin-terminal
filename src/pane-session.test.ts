@@ -410,3 +410,16 @@ describe("a pane whose mirror is gone", () => {
     expect(pane.status.current().failure?.code).toBe("FRAME_FAILED");
   });
 });
+
+// A pane is live when it has a session. Reporting live without one hands every later write to a
+// number nothing serves, and the pane looks ready while nothing it is typed into arrives.
+describe("a pane opened without a session", () => {
+  it("is blocked with the reason rather than reported live", async () => {
+    const { binding } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    binding.open = vi.fn(async () => Number.NaN);
+    const { pane } = mount(binding);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("blocked"));
+    expect(pane.status.current().failure?.code).toBe("START_FAILED");
+    expect(String(pane.status.current().failure?.message)).toContain("session");
+  });
+});
