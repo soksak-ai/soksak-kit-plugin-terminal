@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPaneSession } from "./pane-session";
-import type { ProviderFrameRun, ProviderFrameV2 } from "./provider-frame-presenter";
+import type { ProviderFrameRun, ProviderFrame } from "./provider-frame-presenter";
 import type { TerminalSessionBinding } from "./terminal-session-binding";
 
 for (const [name, value] of Object.entries({
@@ -9,7 +9,7 @@ for (const [name, value] of Object.entries({
 })) document.documentElement.style.setProperty(`--${name}`, value);
 
 const run = (text: string): ProviderFrameRun => ({ text, fg: "default", bg: "default", attrs: 0 });
-const frameOf = (rows: string[], full = true): ProviderFrameV2 => ({
+const frameOf = (rows: string[], full = true): ProviderFrame => ({
   full, cols: 4, rows: rows.length, cursor: [0, 0], cursorVisible: false, altActive: false,
   lines: rows.map((text, y) => ({ y, wrapped: false, runs: [run(text)] })).filter((line) => line.runs[0].text !== ""),
 });

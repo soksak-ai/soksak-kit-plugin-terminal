@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
-import { createProviderFramePresenter, type ProviderFrameRun, type ProviderFrameV2 } from "./provider-frame-presenter";
+import { createProviderFramePresenter, type ProviderFrameRun, type ProviderFrame } from "./provider-frame-presenter";
 
 const run = (text: string, extra: Partial<ProviderFrameRun> = {}): ProviderFrameRun =>
   ({ text, fg: "default", bg: "default", attrs: 0, ...extra });
-const runFrame = (rows: Array<[number, ProviderFrameRun[]]>, extra: Partial<ProviderFrameV2> = {}): ProviderFrameV2 => ({
+const runFrame = (rows: Array<[number, ProviderFrameRun[]]>, extra: Partial<ProviderFrame> = {}): ProviderFrame => ({
   full: true, cols: 4, rows: 2, cursor: [0, 0], cursorVisible: false, altActive: false,
   lines: rows.map(([y, runs]) => ({ y, wrapped: false, runs })), ...extra,
 });

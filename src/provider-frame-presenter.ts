@@ -22,7 +22,6 @@ export interface ProviderFrame {
   offset?: number;
   historySize?: number;
 }
-export type ProviderFrameV2 = ProviderFrame;
 
 export interface ProviderFramePresenterOptions {
   nodeSuffix?: string | null;
