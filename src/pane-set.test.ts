@@ -7,10 +7,9 @@ for (const [name, value] of Object.entries({
   fg: "#eeeeec", card: "#1e1e1e", acc: "#ffffff", fg3: "#555753",
 })) document.documentElement.style.setProperty(`--${name}`, value);
 
-const frame = { cols: 2, rows: 1, cursor: [0, 0], cursor_visible: false, alt_active: false, lines: [[
-  { text: "O", fg: "default", bg: "default", attrs: 0, wide: false },
-  { text: "K", fg: "default", bg: "default", attrs: 0, wide: false },
-]] };
+const frame = { cols: 2, rows: 1, cursor: [0, 0], cursorVisible: false, altActive: false, full: true, lines: [
+  { y: 0, wrapped: false, runs: [{ text: "OK", fg: "default", bg: "default", attrs: 0, n: 2 }] },
+] };
 
 function fakeBinding() {
   let nextSession = 0;
@@ -35,7 +34,7 @@ function fakeBinding() {
       switch (request.op) {
         case "prepareSession": return { ok: true, code: "OK", data: { observerToken: "observer" } };
         case "archived": return { ok: false, code: "NOT_FOUND", message: "none" };
-        case "frame": return { ok: true, code: "OK", data: { outputSequence: Number(request.afterSequence ?? 0), frame } };
+        case "frame": return { ok: true, code: "OK", data: { outputSequence: Number(request.afterSequence ?? 0), ...frame } };
         case "waitSize": return { ok: true, code: "OK", data: { cols: request.cols, rows: request.rows } };
         default: return { ok: true, code: "OK", data: {} };
       }

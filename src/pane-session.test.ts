@@ -10,8 +10,8 @@ for (const [name, value] of Object.entries({
 
 const run = (text: string): ProviderFrameRun => ({ text, fg: "default", bg: "default", attrs: 0 });
 const frameOf = (rows: string[], full = true): ProviderFrameV2 => ({
-  v: 2, full, cols: 4, rows: rows.length, cursor: [0, 0], cursor_visible: false, alt_active: false,
-  lines: rows.map((text, row) => ({ row, runs: [run(text)] })).filter((line) => line.runs[0].text !== ""),
+  full, cols: 4, rows: rows.length, cursor: [0, 0], cursorVisible: false, altActive: false,
+  lines: rows.map((text, y) => ({ y, wrapped: false, runs: [run(text)] })).filter((line) => line.runs[0].text !== ""),
 });
 
 interface FrameReply { ok: boolean; code?: string; data?: Record<string, unknown>; message?: string }
@@ -76,7 +76,7 @@ describe("pane session", () => {
     const { binding, recovery, emit } = fakeBinding(() => {
       served += 1;
       const request = recovery.at(-1)!;
-      return { ok: true, data: { outputSequence: Number(request.afterSequence ?? 0), frame: served === 1 ? frameOf(["ab", "cd"]) : frameOf(["", "xy"], false) } };
+      return { ok: true, data: { outputSequence: Number(request.afterSequence ?? 0), ...(served === 1 ? frameOf(["ab", "cd"]) : frameOf(["", "xy"], false)) } };
     });
     const { pane, root, observed } = mount(binding);
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
@@ -95,7 +95,7 @@ describe("pane session", () => {
   // Every frame request names the subscriber whose baseline it advances. A request without one is
   // refused, and the pane that made it stays blocked with nothing on screen.
   it("names the subscriber on the frame it asks for after a resize", async () => {
-    const { binding, recovery } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, frame: frameOf(["ab", "cd"]) } }));
+    const { binding, recovery } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab", "cd"]) } }));
     const { pane, root } = mount(binding, { hostPixels: () => ({ width: 400, height: 200 }) });
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
     pane.requestResize();
@@ -115,7 +115,7 @@ describe("pane session", () => {
     const { binding, recovery, emit } = fakeBinding(() => {
       served += 1;
       if (served === 1) return { ok: false, code: "TIMEOUT", message: "no output" };
-      return { ok: true, data: { outputSequence: 2, frame: frameOf(["ok"]) } };
+      return { ok: true, data: { outputSequence: 2, ...frameOf(["ok"]) } };
     });
     const { pane } = mount(binding);
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
@@ -131,7 +131,7 @@ describe("pane session", () => {
     const { binding, recovery, emit } = fakeBinding(() => {
       const request = recovery.at(-1)!;
       const asked = Number(request.offset ?? 0);
-      return { ok: true, data: { outputSequence: Number(request.afterSequence ?? 1), offset: Math.min(asked, 40), historySize: 100, frame: frameOf(["ab"]) } };
+      return { ok: true, data: { outputSequence: Number(request.afterSequence ?? 1), offset: Math.min(asked, 40), historySize: 100, ...frameOf(["ab"]) } };
     });
     const { pane } = mount(binding);
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
@@ -167,7 +167,7 @@ describe("pane session", () => {
   });
 
   it("tracks the last output time, resolves an idle wait, and keeps the last cwd report", async () => {
-    const { binding, emit } = fakeBinding(() => ({ ok: true, data: { outputSequence: 1, frame: frameOf(["a"]) } }));
+    const { binding, emit } = fakeBinding(() => ({ ok: true, data: { outputSequence: 1, ...frameOf(["a"]) } }));
     const { pane } = mount(binding, { cwd: "/start" });
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
     expect(pane.lastOutputAtUnixMs).toBeNull();

@@ -237,11 +237,12 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     markRendered(startedAt);
     return true;
   };
+  // The frame reply is the frame: the sequence, the geometry and the lines arrive in one object.
   const applyFrameSnapshot = (value: Record<string, unknown>): boolean => {
     const outputSequence = Number(value.outputSequence);
-    if (!Number.isSafeInteger(outputSequence) || outputSequence < 0 || !applyFrame(value.frame)) return false;
+    if (!Number.isSafeInteger(outputSequence) || outputSequence < 0 || !applyFrame(value)) return false;
     renderedSequence = outputSequence;
-    const frame = value.frame as Record<string, unknown>;
+    const frame = value;
     const reportedHistory = Number(value.historySize ?? frame.historySize);
     if (Number.isSafeInteger(reportedHistory) && reportedHistory >= 0) historySize = reportedHistory;
     // The reply's offset is the one applied; the request was only a wish.

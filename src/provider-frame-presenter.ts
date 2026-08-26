@@ -5,26 +5,24 @@ import {
 import { terminalNodeId } from "./terminal-presentation-status";
 import { bindTerminalThemeSurface } from "./terminal-theme";
 
-export interface ProviderFrameCell { text: string; fg: string; bg: string; attrs: number; wide: boolean }
-export interface ProviderFrameRun { text: string; fg: string; bg: string; attrs: number; wide?: boolean; link?: string | null }
-export interface ProviderFrameRow { row: number; runs: ProviderFrameRun[] }
-interface ProviderFrameHead {
+// n is the cells the run covers: one per narrow glyph, two per wide one.
+export interface ProviderFrameRun { text: string; fg: string; bg: string; attrs: number; n?: number; wide?: boolean; link?: string | null }
+export interface ProviderFrameRow { y: number; wrapped?: boolean; runs: ProviderFrameRun[] }
+// The reply the terminal contract declares. full replaces every row; otherwise only the listed
+// rows change and the rest stand.
+export interface ProviderFrame {
   cols: number;
   rows: number;
   cursor: [number, number];
-  cursor_visible: boolean;
-  alt_active: boolean;
-}
-export interface ProviderFrameV1 extends ProviderFrameHead { lines: ProviderFrameCell[][] }
-// v2: rows of runs. full replaces every row; otherwise only the listed rows change.
-export interface ProviderFrameV2 extends ProviderFrameHead {
-  v: 2;
+  cursorVisible: boolean;
+  altActive: boolean;
   full: boolean;
   lines: ProviderFrameRow[];
+  outputSequence?: number;
   offset?: number;
   historySize?: number;
 }
-export type ProviderFrame = ProviderFrameV1 | ProviderFrameV2;
+export type ProviderFrameV2 = ProviderFrame;
 
 export interface ProviderFramePresenterOptions {
   nodeSuffix?: string | null;
@@ -49,10 +47,6 @@ type RenderRun = ProviderFrameRun & { cursor: boolean };
 const PROBE_GLYPHS = 32;
 const BLANK: ProviderFrameRun = { text: "", fg: "default", bg: "default", attrs: 0 };
 
-function isRunFrame(frame: ProviderFrame): frame is ProviderFrameV2 {
-  return (frame as ProviderFrameV2).v === 2;
-}
-
 function indexedColor(value: string, bold = false): string {
   if (value === "default") return "";
   if (value.startsWith("#")) return value;
@@ -63,20 +57,6 @@ function indexedColor(value: string, bold = false): string {
   }
   if (bold && index < 8) index += 8;
   return TERMINAL_ANSI_PALETTE[index];
-}
-
-function runsOfCells(cells: ProviderFrameCell[]): ProviderFrameRun[] {
-  const runs: ProviderFrameRun[] = [];
-  for (const cell of cells) {
-    const previous = runs.at(-1);
-    if (previous && previous.fg === cell.fg && previous.bg === cell.bg
-        && previous.attrs === cell.attrs && Boolean(previous.wide) === cell.wide) {
-      previous.text += cell.text;
-    } else {
-      runs.push({ text: cell.text, fg: cell.fg, bg: cell.bg, attrs: cell.attrs, wide: cell.wide });
-    }
-  }
-  return runs;
 }
 
 function withCursor(runs: ProviderFrameRun[], column: number | null): RenderRun[] {
@@ -233,26 +213,21 @@ export function createProviderFramePresenter(
     render(frame) {
       const previousCursorRow = cursor[0];
       const dirty = new Set<number>();
-      if (isRunFrame(frame)) {
-        if (frame.full) {
-          rows = Array.from({ length: frame.rows }, () => [] as ProviderFrameRun[]);
-          for (let index = 0; index < frame.rows; index += 1) dirty.add(index);
-        } else {
-          rows = rows.slice(0, frame.rows);
-          while (rows.length < frame.rows) { dirty.add(rows.length); rows.push([]); }
-        }
-        for (const line of frame.lines) {
-          if (line.row < 0 || line.row >= frame.rows) continue;
-          rows[line.row] = line.runs.map((run) => ({ ...run }));
-          dirty.add(line.row);
-        }
-      } else {
-        rows = Array.from({ length: frame.rows }, (_, index) => runsOfCells(frame.lines[index] ?? []));
+      if (frame.full) {
+        rows = Array.from({ length: frame.rows }, () => [] as ProviderFrameRun[]);
         for (let index = 0; index < frame.rows; index += 1) dirty.add(index);
+      } else {
+        rows = rows.slice(0, frame.rows);
+        while (rows.length < frame.rows) { dirty.add(rows.length); rows.push([]); }
+      }
+      for (const line of frame.lines) {
+        if (line.y < 0 || line.y >= frame.rows) continue;
+        rows[line.y] = line.runs.map((run) => ({ ...run }));
+        dirty.add(line.y);
       }
       size = { cols: frame.cols, rows: frame.rows };
       cursor = [frame.cursor[0], frame.cursor[1]];
-      cursorVisible = frame.cursor_visible;
+      cursorVisible = frame.cursorVisible;
       dirty.add(previousCursorRow);
       dirty.add(cursor[0]);
       while (screen.children.length < frame.rows) {
@@ -270,8 +245,8 @@ export function createProviderFramePresenter(
       text = rows.map(rowText).join("\n");
       screen.dataset.cursorRow = String(cursor[0]);
       screen.dataset.cursorColumn = String(cursor[1]);
-      screen.dataset.cursorVisible = String(frame.cursor_visible);
-      screen.dataset.altActive = String(frame.alt_active);
+      screen.dataset.cursorVisible = String(frame.cursorVisible);
+      screen.dataset.altActive = String(frame.altActive);
       screen.dataset.renderSequence = String(Number(screen.dataset.renderSequence ?? "0") + 1);
       updateCursor();
       for (const listener of textListeners) listener(text);

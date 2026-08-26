@@ -33,7 +33,7 @@ function fakeSidecars() {
         : command === "pty.open" ? { session: ++nextSession }
         : command === "terminal.prepareSession" ? { observerToken: "observer" }
         : command === "terminal.waitSize" ? { cols: payload.cols, rows: payload.rows }
-        : command === "terminal.frame" ? { outputSequence: Number(payload.afterSequence ?? 0), frame: { cols: 2, rows: 1, cursor: [0, 0], cursor_visible: true, alt_active: false, lines: [[]] } }
+        : command === "terminal.frame" ? { outputSequence: Number(payload.afterSequence ?? 0), cols: 2, rows: 1, cursor: [0, 0], cursorVisible: true, altActive: false, full: true, lines: [] }
         : {};
       return { ok: true, result: { data } };
     }),
@@ -453,7 +453,7 @@ describe("provider-backed terminal plugin", () => {
         if (request.command === "terminal.waitSize" && payload.cols === 54) await narrowObserved;
         const data = request.command === "terminal.prepareSession" ? { observerToken: "observer" }
           : request.command === "terminal.waitSize" ? { cols: payload.cols, rows: payload.rows }
-          : request.command === "terminal.frame" ? { outputSequence: 0, frame: { cols: Number(payload.cols ?? 54), rows: 24, cursor: [0,0], cursor_visible: true, alt_active: false, lines: [[]] } } : {};
+          : request.command === "terminal.frame" ? { outputSequence: 0, cols: Number(payload.cols ?? 54), rows: 24, cursor: [0,0], cursorVisible: true, altActive: false, full: true, lines: [] } : {};
         return { ok: true, result: { data } };
       }),
       stream: vi.fn(),
@@ -585,7 +585,7 @@ describe("provider-backed terminal plugin", () => {
         const data = command === "pty.pane" ? { held: true }
           : command === "terminal.rehydrate" ? {
             leaseToken: "lease", uptoSeq: 12,
-            frame: { cols: 2, rows: 1, cursor: [0, 1], cursor_visible: true, alt_active: false, lines: [[{ text: "R", fg: "default", bg: "default", attrs: 0, wide: false }]] },
+            frame: { cols: 2, rows: 1, cursor: [0, 1], cursorVisible: true, altActive: false, full: true, lines: [{ y: 0, wrapped: false, runs: [{ text: "R", fg: "default", bg: "default", attrs: 0, n: 1 }] }] },
           }
           : command === "pty.open" ? { session: 7 } : {};
         return { ok: true, result: { data } };
@@ -643,7 +643,7 @@ describe("provider-backed terminal plugin", () => {
         const command = request.command;
         if (command === "terminal.archived") return { ok: false, error: "not found", result: { code: "NOT_FOUND" } };
         const data = command === "terminal.prepareSession" ? { observerToken: "obs" }
-          : command === "terminal.frame" ? { outputSequence: 12, frame: { cols: 4, rows: 1, cursor: [0, 2], cursor_visible: true, alt_active: false, lines: [[{ text: "OK", fg: "default", bg: "default", attrs: 0, wide: false }]] } } : {};
+          : command === "terminal.frame" ? { outputSequence: 12, cols: 4, rows: 1, cursor: [0, 2], cursorVisible: true, altActive: false, full: true, lines: [{ y: 0, wrapped: false, runs: [{ text: "OK", fg: "default", bg: "default", attrs: 0, n: 2 }] }] } : {};
         return { ok: true, result: { data } };
       }),
       stream: vi.fn(),
@@ -702,7 +702,7 @@ describe("provider-backed terminal plugin", () => {
         if (command === "terminal.frame") { frameSequences.push(Number(asked.afterSequence)); if (frameSequences.length === 1) await blocked; }
         if (command === "terminal.archived") return { ok: false, error: "not found", result: { code: "NOT_FOUND" } };
         const data = command === "pty.open" ? { session: 1 } : command === "terminal.prepareSession" ? { observerToken: "o" }
-          : command === "terminal.frame" ? { outputSequence: Number(asked.afterSequence), frame: { cols: 1, rows: 1, cursor: [0,0], cursor_visible: true, alt_active: false, lines: [[]] } } : {};
+          : command === "terminal.frame" ? { outputSequence: Number(asked.afterSequence), cols: 1, rows: 1, cursor: [0,0], cursorVisible: true, altActive: false, full: true, lines: [] } : {};
         return { ok: true, result: { data } };
       }),
       stream: vi.fn(async (_r: unknown, h: { onBytes(bytes: Uint8Array): void }) => { emit = h.onBytes; return { answer: { ok: true, result: { data: { startSeq: 0 } } }, close: settledClose() }; }),
