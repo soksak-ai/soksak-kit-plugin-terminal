@@ -391,10 +391,14 @@ describe("a pane whose mirror is gone", () => {
   it("starts a session again rather than standing blocked", async () => {
     let sessions = 0;
     let missing = false;
-    const { binding, emit } = fakeBinding(() => (missing
+    const { binding, detached, emit } = fakeBinding(() => (missing
       ? { ok: false, code: "NOT_FOUND", message: "no live terminal-state mirror for this key" }
       : { ok: true, data: { outputSequence: 9, ...frameOf(["ab"]) } }));
-    binding.open = vi.fn(async () => ++sessions);
+    binding.open = vi.fn(async () => {
+      sessions += 1;
+      if (sessions === 2) missing = false;
+      return sessions;
+    });
     const { pane } = mount(binding);
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
     expect(sessions).toBe(1);
@@ -402,10 +406,23 @@ describe("a pane whose mirror is gone", () => {
     missing = true;
     emit(1, new Uint8Array([1, 2, 3]));
     await vi.waitFor(() => expect(sessions).toBeGreaterThan(1), { timeout: 4000 });
+    await vi.waitFor(() => expect(detached).toContain(1));
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    expect(pane.status.current().failure).toBeNull();
+    expect(pane.presenter.size()).toEqual({ cols: 4, rows: 1 });
     // The pane waits between tries rather than starting over as fast as it can.
     const spent = sessions;
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(sessions).toBe(spent);
+  });
+});
+
+describe("a pane before its first frame", () => {
+  it("does not publish live until the renderer has nonzero dimensions", async () => {
+    const { binding } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    const { pane } = mount(binding, { hostPixels: () => ({ width: 400, height: 200 }) });
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    expect(pane.presenter.size()).toEqual({ cols: 4, rows: 1 });
   });
 });
 
