@@ -177,8 +177,9 @@ export function activateProviderTerminalPlugin(
       let requestedSequence = 0;
       let renderedSequence: number | null = null;
       let rendering = false;
-      let frameRequest: number | null = null;
-      let byteFrameRequest: number | null = null;
+      // ReturnType<typeof setTimeout>: a consumer that type-checks this source with Node types sees Timeout, not number.
+      let frameRequest: ReturnType<typeof setTimeout> | null = null;
+      let byteFrameRequest: ReturnType<typeof setTimeout> | null = null;
       let writingOutput = false;
       let pendingOutput: Uint8Array[] = [];
       let pendingOutputSequence = 0;
