@@ -415,6 +415,28 @@ describe("a pane whose PTY stream ended", () => {
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
     expect(pane.status.current().failure).toBeNull();
   });
+  it("renders the new session when its output sequence starts below the ended session", async () => {
+    let outputSequence = 0;
+    let text = "old";
+    const { binding, emit, emitEnd } = fakeBinding(() => ({
+      ok: true, data: { outputSequence, ...frameOf([text]) },
+    }));
+    const { pane } = mount(binding);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+
+    outputSequence = 4;
+    emit(1, new Uint8Array([1, 2, 3, 4]));
+    await vi.waitFor(() => expect(pane.presenter.read()).toBe("old"));
+    emitEnd(1, "PTY sidecar ended");
+    await vi.waitFor(() => expect(binding.open).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+
+    outputSequence = 1;
+    text = "new";
+    emit(2, new Uint8Array([9]));
+    await vi.waitFor(() => expect(pane.presenter.read()).toBe("new"));
+    expect(pane.renderedOutputSequence).toBe(1);
+  });
 });
 
 // A frame the engine has no mirror for is a session that is gone. The pane starts one again.
