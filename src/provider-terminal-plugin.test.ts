@@ -774,3 +774,36 @@ describe("provider-backed terminal plugin", () => {
     expect(view.closeIntent!(document.createElement("div"))).toBe("pass");
   });
 });
+
+// An extension command runs against one pane inside one view, and is told both.
+describe("an extension command", () => {
+  it("is told the view and the pane it reached", async () => {
+    const seen: Array<{ view: string; pane: string }> = [];
+    const commands = new Map<string, Record<string, unknown>>();
+    let view: View | undefined;
+    const { channel } = fakeSidecars();
+    const host: ProviderTerminalPluginHost = {
+      windowLabel: () => "window", secrets: { generate: async () => ({ created: true }) },
+      sidecar: { open: async () => channel as never },
+      ui: { registerView: (_id, provider) => { view = provider; return { dispose() {} }; } },
+      commands: { register: (name, spec) => { commands.set(name, spec); return { dispose() {} }; }, execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
+    };
+    activateProviderTerminalPlugin(host, [], {
+      pluginId: "plugin", engineId: "vt100", ptySidecarId: "soksak-sidecar-pty",
+      terminalSidecarId: "soksak-sidecar-terminal-vt100", programId: "terminal-vt100",
+      extensions: [{
+        name: "probe.where", params: {},
+        handler: (_params, screen) => {
+          if (screen) seen.push({ view: screen.view, pane: screen.pane });
+          return { view: screen?.view ?? null, pane: screen?.pane ?? null };
+        },
+      }],
+    });
+    const root = document.createElement("div"); document.body.append(root);
+    view!.mount(root, { viewId: "tab-a" });
+    await vi.waitFor(() => expect(root.dataset.terminalPhase).toBe("live"));
+    const answer = await (commands.get("probe.where")!.handler as Handler)({ view: "tab-a" }, undefined);
+    expect(answer).toMatchObject({ view: "tab-a", pane: "tab-a.1" });
+    expect(seen).toEqual([{ view: "tab-a", pane: "tab-a.1" }]);
+  });
+});

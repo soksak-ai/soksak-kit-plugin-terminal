@@ -74,8 +74,9 @@ export interface TerminalCommandExtension {
   name: string;
   params: Record<string, unknown>;
   danger?: "inject";
+  // view is the terminal view; pane is the one pane inside it the command reached.
   handler(params: Record<string, unknown>, screen: {
-    pane: string; presenter: TerminalPresenter; writable: boolean; send(data: string): void;
+    view: string; pane: string; presenter: TerminalPresenter; writable: boolean; send(data: string): void;
   } | undefined): unknown;
 }
 
@@ -477,7 +478,7 @@ export function activateProviderTerminalPlugin(
     register(extension.name, extension.params, (params, context) => {
       const found = target(params, context);
       return extension.handler(params, found ? {
-        pane: found.pane.key, presenter: found.pane.presenter,
+        view: found.view.viewId, pane: found.pane.key, presenter: found.pane.presenter,
         writable: found.pane.writable,
         send: (data) => { void found.pane.write(data).catch(() => {}); },
       } : undefined);
