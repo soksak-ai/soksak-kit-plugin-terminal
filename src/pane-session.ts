@@ -342,8 +342,11 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   let requestResize = () => {};
   const resizeSession = async () => {
     const px = hostPixels();
-    if (!session || px.width <= 0 || px.height <= 0) return;
+    if (px.width <= 0 || px.height <= 0) return;
+    // Fitting the renderer to the pane is display, not session: a pane with no session still shows
+    // the whole box, and a renderer left at its own default fills only part of it.
     const { cols, rows } = terminalSize();
+    if (!session) return;
     await binding.resize(session, cols, rows);
     requestedSize = { cols, rows };
     const observed = requireReply(await binding.recoveryRequest({ op: "waitSize", pane: key, cols, rows, timeoutMs: 8000 }), "waitSize");
@@ -363,6 +366,9 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   };
   const resizeWorker = createTerminalResizeWorker(resizeSession, reportResizeFailure);
   requestResize = () => resizeWorker.request();
+  // The pane shows its whole box from the moment it is mounted, whether or not a session ever
+  // starts behind it.
+  requestResize();
   const keepTail = (chunk: Uint8Array) => {
     if (chunk.length >= TAIL_BYTES) { tail = chunk.slice(chunk.length - TAIL_BYTES); return; }
     const length = Math.min(TAIL_BYTES, tail.length + chunk.length);

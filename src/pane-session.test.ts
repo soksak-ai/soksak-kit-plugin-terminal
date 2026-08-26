@@ -286,3 +286,31 @@ describe("a pane that is not live", () => {
     expect(notice.textContent).toContain("archived");
   });
 });
+
+// Fitting the renderer to the pane is display, not session. A pane with no session still shows the
+// whole box; a renderer left at its own default fills only the top of the pane.
+describe("a pane with no session", () => {
+  it("still fits its renderer to the pane box", async () => {
+    const fits: number[] = [];
+    const { binding } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    binding.open = vi.fn(async () => { throw new Error("no shell here"); });
+    const { pane } = mount(binding, {
+      hostPixels: () => ({ width: 800, height: 400 }),
+      config: {
+        pluginId: "plugin", engineId: "vt100",
+        renderer: {
+          delivery: "bytes" as const, rendererId: "probe",
+          create: (root: HTMLElement) => ({
+            root, screen: root, input: root.ownerDocument.createElement("textarea"),
+            read: () => "", size: () => ({ cols: 0, rows: 0 }), measure: () => ({ cols: 100, rows: 25 }),
+            fit: () => { fits.push(1); },
+            focus: () => true, dispose: () => {},
+            writeOutput: () => {}, applySnapshot: () => {}, onRendered: () => ({ dispose: () => {} }),
+          } as never),
+        },
+      },
+    });
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("blocked"));
+    await vi.waitFor(() => expect(fits.length).toBeGreaterThan(0));
+  });
+});
