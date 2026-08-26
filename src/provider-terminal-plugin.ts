@@ -313,20 +313,23 @@ export function activateProviderTerminalPlugin(
           scheduleByteOutput();
         }
       };
+      // Output is applied on a task, not on an animation frame: WebKit stops requestAnimationFrame
+      // for an occluded window, and output that waits for a frame never reaches the presenter.
+      // A burst arriving within one task still coalesces into one write.
       const scheduleByteOutput = () => {
         if (byteFrameRequest !== null || writingOutput || stopped || pendingOutput.length === 0) return;
-        byteFrameRequest = requestAnimationFrame(() => {
+        byteFrameRequest = setTimeout(() => {
           byteFrameRequest = null;
           void flushByteOutput().catch(reportFrameFailure);
-        });
+        }, 0);
       };
       const scheduleRenderLatest = () => {
         if (frameRequest !== null || rendering || stopped
             || requestedSequence <= (renderedSequence ?? -1)) return;
-        frameRequest = requestAnimationFrame(() => {
+        frameRequest = setTimeout(() => {
           frameRequest = null;
           void renderLatest().catch(reportFrameFailure);
-        });
+        }, 0);
       };
       const renderLatest = async (): Promise<void> => {
         if (rendering || stopped || requestedSequence <= (renderedSequence ?? -1)) return;
@@ -511,9 +514,9 @@ export function activateProviderTerminalPlugin(
           if (stopping) return stopping;
           stopped = true;
           writable = false;
-          if (frameRequest !== null) cancelAnimationFrame(frameRequest);
+          if (frameRequest !== null) clearTimeout(frameRequest);
           frameRequest = null;
-          if (byteFrameRequest !== null) cancelAnimationFrame(byteFrameRequest);
+          if (byteFrameRequest !== null) clearTimeout(byteFrameRequest);
           byteFrameRequest = null;
           pendingOutput = [];
           resize.dispose();

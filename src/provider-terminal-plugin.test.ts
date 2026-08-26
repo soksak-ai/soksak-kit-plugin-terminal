@@ -156,6 +156,56 @@ describe("provider-backed terminal plugin", () => {
     });
   });
 
+  it("applies sidecar output while the page receives no animation frames", async () => {
+    // WebKit stops requestAnimationFrame for an occluded window; output must still reach the presenter.
+    const frame = vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1);
+    try {
+      let view: { mount(container: HTMLElement, context: unknown): void } | undefined;
+      const output: Uint8Array[] = [];
+      let emit: ((bytes: Uint8Array) => void) | undefined;
+      const channel = {
+        send: vi.fn(async (request: Record<string, unknown>) => {
+          const command = String(request.command);
+          const data = command === "pty.pane" ? { held: false }
+            : command === "pty.open" ? { session: 7 }
+            : command === "terminal.prepareSession" ? { observerToken: "observer" } : {};
+          if (command === "terminal.archived") return { ok: false, error: "not found", result: { code: "NOT_FOUND" } };
+          return { ok: true, result: { data } };
+        }),
+        stream: vi.fn(async (_request: unknown, handlers: { onBytes(bytes: Uint8Array): void }) => {
+          emit = handlers.onBytes;
+          return { answer: { ok: true, result: { data: { startSeq: 0 } } }, close: settledClose() };
+        }),
+      };
+      const host: ProviderTerminalPluginHost = {
+        windowLabel: () => "window",
+        secrets: { generate: async () => ({ created: true }) },
+        sidecar: { open: async () => channel },
+        ui: { registerView: (_id, provider) => { view = provider; return { dispose() {} }; } },
+        commands: { register: () => ({ dispose() {} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
+      };
+      activateProviderTerminalPlugin(host, [], {
+        pluginId: "plugin", engineId: "byte", ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-vt100",
+        programId: "terminal-byte", renderer: {
+          delivery: "bytes", rendererId: "byte-renderer",
+          create: (container) => ({
+            root: container, size: () => ({ cols: 80, rows: 24 }), fit() {},
+            applySnapshot: async () => {}, writeOutput: async (bytes) => { output.push(bytes); },
+            onRendered: () => ({ dispose() {} }), read: () => "", waitForText: async () => "", focus: () => true, dispose() {},
+          }),
+        },
+      });
+      const root = document.createElement("div"); document.body.append(root);
+      view!.mount(root, { viewId: "pane" });
+      await vi.waitFor(() => expect(root.dataset.terminalPhase).toBe("live"));
+      emit!(new Uint8Array([66]));
+      emit!(new Uint8Array([67]));
+      await vi.waitFor(() => expect(output).toEqual([new Uint8Array([66, 67])]), { timeout: 1000 });
+    } finally {
+      frame.mockRestore();
+    }
+  });
+
   it("rejects extensions that replace standard terminal commands", () => {
     const host = {
       windowLabel: () => "window", sidecar: { open: vi.fn() },
