@@ -106,13 +106,17 @@ export function createProviderFramePresenter(
   send: (text: string) => void,
 ): ProviderFramePresenter {
   container.dataset.node = "terminal-root";
+  // The pane never scrolls: the screen clips to the rows it paints, the remainder below the last
+  // row stays inside the screen, and nothing below the screen can pull the pane up.
+  Object.assign(container.style, { overflow: "hidden", position: "relative" });
   const screen = document.createElement("pre");
   screen.dataset.node = "terminal-screen";
   screen.setAttribute("role", "log");
   screen.setAttribute("aria-live", "polite");
   screen.tabIndex = -1;
+  // One fixed row height: rows are counted from it (measure), so rows × 16px never exceeds the pane.
   Object.assign(screen.style, {
-    margin: "0", width: "100%", height: "100%", overflow: "auto", whiteSpace: "pre",
+    margin: "0", width: "100%", height: "100%", overflow: "hidden", whiteSpace: "pre", lineHeight: "16px",
   });
   bindTerminalThemeSurface(screen);
   const input = document.createElement("textarea");
@@ -120,7 +124,8 @@ export function createProviderFramePresenter(
   input.dataset.focused = "false";
   input.setAttribute("aria-label", "Terminal input");
   input.autocapitalize = "off"; input.autocomplete = "off"; input.spellcheck = false;
-  Object.assign(input.style, { position: "absolute", width: "1px", height: "1px", opacity: "0" });
+  // Anchored at the top-left of the pane: focusing it can never scroll the pane.
+  Object.assign(input.style, { position: "absolute", top: "0", left: "0", width: "1px", height: "1px", opacity: "0", margin: "0", padding: "0", border: "0" });
   let acceptedInputSequence = 0;
   const accept = (value: string) => {
     if (!value) return;

@@ -110,3 +110,23 @@ describe("provider frame presenter", () => {
     expect(presenter.measure()).toEqual({ cols: 54, rows: 24 });
   });
 });
+
+describe("frame presenter layout", () => {
+  it("never scrolls: the pane and the screen clip, rows have one fixed height, and the input is anchored at the top-left", () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    createProviderFramePresenter(root, () => {});
+    // Measured 2026-08-26: a 468px pane painted 29 rows of an unfixed line height and hid a 1px
+    // input below the screen; focusing the input scrolled the pane by 6px, so the first row was
+    // clipped and a blank band stayed at the bottom.
+    expect(root.style.overflow).toBe("hidden");
+    expect(root.style.position).toBe("relative");
+    const screen = root.querySelector<HTMLElement>('[data-node="terminal-screen"]')!;
+    expect(screen.style.overflow).toBe("hidden");
+    expect(screen.style.lineHeight).toBe("16px");
+    const input = root.querySelector<HTMLElement>('[data-node="terminal-input"]')!;
+    expect(input.style.position).toBe("absolute");
+    expect(input.style.top).toBe("0px");
+    expect(input.style.left).toBe("0px");
+  });
+});
