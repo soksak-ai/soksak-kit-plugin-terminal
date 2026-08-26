@@ -51,7 +51,11 @@ function fakeBinding() {
   return { binding, opens, writes, detached, emit };
 }
 
-function setup(hostExtra: Partial<PaneSetHost> = {}, restore: { next: number } | null = null) {
+function setup(
+  hostExtra: Partial<PaneSetHost> = {},
+  restore: { next: number } | null = null,
+  stopBarriers = new Map<string, Promise<void>>(),
+) {
   const { binding, opens, writes, detached, emit } = fakeBinding();
   const engines: string[] = [];
   const states: unknown[] = [];
@@ -73,6 +77,7 @@ function setup(hostExtra: Partial<PaneSetHost> = {}, restore: { next: number } |
     context: { setRestoreState: (state) => states.push(state), setTitle: (title) => titles.push(title) },
     config: { pluginId: "plugin", engineId: "vt100", label: { en: "Terminal", ko: "터미널" } },
     engineFor: (engineId) => { engines.push(engineId ?? ""); return { engineId: engineId ?? "vt100", binding }; },
+    stopBarriers,
     restore,
   });
   const paneRoot = () => { const root = document.createElement("div"); container.append(root); return root; };
@@ -204,5 +209,27 @@ describe("closing a pane", () => {
     await set.closePane("tab-a.1");
     expect(binding.close).toHaveBeenCalledTimes(1);
     expect(binding.detach).not.toHaveBeenCalled();
+  });
+});
+
+describe("reloading a pane set", () => {
+  it("does not open a replacement session until the previous generation detached", async () => {
+    const barriers = new Map<string, Promise<void>>();
+    const first = setup({}, null, barriers);
+    const pane = first.set.openPane({ key: "tab-a.1", root: first.paneRoot() });
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    let releaseDetach!: () => void;
+    const detachPending = new Promise<void>((resolve) => { releaseDetach = resolve; });
+    first.binding.detach = vi.fn(async () => detachPending);
+
+    const disposing = first.set.dispose();
+    const replacement = setup({}, null, barriers);
+    replacement.set.openPane({ key: "tab-a.1", root: replacement.paneRoot() });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(replacement.opens).toEqual([]);
+
+    releaseDetach();
+    await disposing;
+    await vi.waitFor(() => expect(replacement.opens).toHaveLength(1));
   });
 });
