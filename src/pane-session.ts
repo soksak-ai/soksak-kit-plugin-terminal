@@ -162,7 +162,19 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       status?.refresh();
       for (const listener of inputListeners) listener(text);
     }
-    if (!writable || !session) return;
+    // Input the pane cannot deliver is not input that quietly disappears. A pane with nothing behind
+    // it says so and starts a session again; a pane that is still starting keeps its silence.
+    if (!session) {
+      if (!stopped && status && status.current().phase === "live") {
+        status.set("blocked", {
+          failure: { code: "INPUT_WRITE_FAILED", message: `pane ${key} has no session` },
+          fidelity: "unavailable",
+        });
+        restartSession();
+      }
+      return;
+    }
+    if (!writable) return;
     const attached = session;
     writeQueue = writeQueue.then(() => binding.write(attached, text)).then(() => {
       presentation.markPtyWrite();
