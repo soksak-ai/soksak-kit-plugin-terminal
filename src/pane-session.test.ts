@@ -444,3 +444,30 @@ describe("a pane that came back", () => {
     await vi.waitFor(() => expect(pane.status.current().failure).toBeNull());
   });
 });
+
+// A pane that cannot reach its terminal keeps trying. Giving up leaves a tab nothing can bring back,
+// and the thing it waits for — a daemon coming back — is exactly what happens a moment later.
+describe("a pane that cannot reach its terminal", () => {
+  it("keeps trying and comes back when it can", async () => {
+    let sessions = 0;
+    let broken = true;
+    const { binding, emit } = fakeBinding(() => (broken
+      ? { ok: false, code: "NOT_FOUND", message: "no live terminal-state mirror for this key" }
+      : { ok: true, data: { outputSequence: 12, ...frameOf(["ab"]) } }));
+    binding.open = vi.fn(async () => ++sessions);
+    broken = false;
+    const { pane } = mount(binding);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+
+    broken = true;
+    emit(1, new Uint8Array([1, 2, 3]));
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("blocked"), { timeout: 3000 });
+    const gaveUp = sessions;
+    // The pane is still trying while it is down.
+    await vi.waitFor(() => expect(sessions).toBeGreaterThan(gaveUp), { timeout: 5000 });
+
+    broken = false;
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"), { timeout: 8000 });
+    expect(pane.status.current().failure).toBeNull();
+  }, 20000);
+});

@@ -334,9 +334,11 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   };
   const outputAhead = () => requestedSequence > (renderedSequence ?? -1);
   let shown = true;
-  // Restarting a session is for one that went away while the pane was working. A pane that never
-  // gets a frame after restarting stays blocked with the reason rather than starting over forever.
+  // Restarting a session is for one that went away while the pane was working. A pane that keeps
+  // failing waits longer between tries, and never stops: what it is waiting for — a unit coming
+  // back — is the thing that happens on its own.
   let restartsWithoutProgress = 0;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
   const scheduleRenderLatest = () => {
     if (frameRequest !== null || renderingTask || stopped || !shown || (!frameForced && !outputAhead())) return;
     frameRequest = setTimeout(() => {
@@ -524,8 +526,18 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   // restartSession runs the start path again for a pane whose session is gone. One restart is in
   // flight at a time, and a restart that fails leaves the pane blocked with the reason.
   let restarting: Promise<void> | null = null;
+  const retryDelayMs = () => Math.min(8000, 250 * 2 ** Math.max(0, restartsWithoutProgress - 1));
   const restartSession = () => {
-    if (stopped || restarting || restartsWithoutProgress >= RESTART_LIMIT) return;
+    if (stopped || restarting || retryTimer !== null) return;
+    if (restartsWithoutProgress >= RESTART_LIMIT) {
+      // Past the first few tries the pane waits between them rather than spinning.
+      retryTimer = setTimeout(() => { retryTimer = null; restartNow(); }, retryDelayMs());
+      return;
+    }
+    restartNow();
+  };
+  const restartNow = () => {
+    if (stopped || restarting) return;
     restartsWithoutProgress += 1;
     session = 0;
     writable = false;
@@ -547,7 +559,10 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
           fidelity: "unavailable", recoveryOutcome: "blocked",
         });
       })
-      .finally(() => { restarting = null; });
+      .finally(() => {
+        restarting = null;
+        if (!stopped && status.current().phase !== "live") restartSession();
+      });
   };
   const start = async () => {
     status.set("preparing-recovery");
@@ -688,6 +703,7 @@ setShown(next) {
       if (byteFrameRequest !== null) clearTimeout(byteFrameRequest);
       byteFrameRequest = null;
       pendingOutput = [];
+      if (retryTimer !== null) { clearTimeout(retryTimer); retryTimer = null; }
       root.removeEventListener("focusin", focusChanged);
       root.removeEventListener("focusout", focusChanged);
       window.removeEventListener("soksak:capture-prepare", capturePrepare);
