@@ -421,6 +421,12 @@ describe("a pane whose PTY stream ended", () => {
     const { binding, emit, emitEnd } = fakeBinding(() => ({
       ok: true, data: { outputSequence, ...frameOf([text]) },
     }));
+    const open = binding.open;
+    binding.open = vi.fn(async (...args: Parameters<typeof open>) => {
+      const session = await open(...args);
+      if (session === 2) outputSequence = 0;
+      return session;
+    });
     const { pane } = mount(binding);
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
 

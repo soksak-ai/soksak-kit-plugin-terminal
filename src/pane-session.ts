@@ -134,6 +134,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   let renderedSequence: number | null = null;
   let renderingTask: Promise<void> | null = null;
   let frameForced = false;
+  let sourceGeneration = 0;
   // ReturnType<typeof setTimeout>: a consumer that type-checks this source with Node types sees Timeout, not number.
   let frameRequest: ReturnType<typeof setTimeout> | null = null;
   let byteFrameRequest: ReturnType<typeof setTimeout> | null = null;
@@ -309,6 +310,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     if (writingOutput || stopped || pendingOutput.length === 0 || !presenter.writeOutput) return;
     const chunks = pendingOutput;
     const throughSeq = pendingOutputSequence;
+    const generation = sourceGeneration;
     pendingOutput = [];
     const size = chunks.reduce((total, bytes) => total + bytes.length, 0);
     const bytes = new Uint8Array(size);
@@ -320,8 +322,10 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     writingOutput = true;
     try {
       await presenter.writeOutput(bytes);
-      renderedSequence = Math.max(renderedSequence ?? 0, throughSeq);
-      status.refresh();
+      if (generation === sourceGeneration) {
+        renderedSequence = Math.max(renderedSequence ?? 0, throughSeq);
+        status.refresh();
+      }
     } finally {
       writingOutput = false;
       scheduleByteOutput();
@@ -356,6 +360,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     const forced = frameForced;
     frameForced = false;
     const sequence = requestedSequence;
+    const generation = sourceGeneration;
     renderingTask = (async () => {
       const response = await binding.recoveryRequest({
         op: "frame", pane: key, subscriber: `${key}#${session}`,
@@ -363,6 +368,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
         offset, timeoutMs: FRAME_TIMEOUT_MS,
       });
       if (stopped) return;
+      if (generation !== sourceGeneration) return;
       // A timed-out long poll carries no frame; the loop re-arms only when output is ahead.
       if (response.ok !== true && response.code === "TIMEOUT") return;
       if (!applyFrameSnapshot(requireReply(response, "frame"))) throw new Error("frame response has no exact output sequence");
@@ -442,6 +448,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     });
     writable = true;
     requestResize();
+    if (!bytesDelivery && frameForced) scheduleRenderLatest();
   };
   const detachIfStopped = async (opened: number): Promise<boolean> => {
     if (!stopped) return false;
@@ -632,6 +639,17 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     // picture of one that ended.
     const restored = await startArchived();
     if (stopped) return;
+    const requestInitialFrame = sourceGeneration > 0;
+    sourceGeneration += 1;
+    requestedSequence = 0;
+    renderedSequence = null;
+    pendingOutput = [];
+    pendingOutputSequence = 0;
+    tail = new Uint8Array();
+    lastOutputAt = null;
+    frameForced = requestInitialFrame;
+    if (frameRequest !== null) clearTimeout(frameRequest);
+    frameRequest = null;
     await startFresh({ recoveryOutcome: restored ? "archived" : undefined });
   };
   const capturePrepare = () => presenter.refresh?.();
