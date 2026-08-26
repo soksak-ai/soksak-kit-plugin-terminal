@@ -134,9 +134,7 @@ export function createProviderFramePresenter(
     const sequence = sequences[event.key];
     if (sequence) { event.preventDefault(); accept(sequence); }
   });
-  const recovery = document.createElement("span");
-  recovery.dataset.node = "terminal-restore-status"; recovery.hidden = true;
-  container.replaceChildren(screen, input, recovery);
+  container.replaceChildren(screen, input);
   let text = "";
   let size = { cols: 0, rows: 0 };
   let cursorVisible = false;

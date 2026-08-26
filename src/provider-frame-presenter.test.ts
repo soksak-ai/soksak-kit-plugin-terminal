@@ -14,7 +14,8 @@ describe("provider frame presenter", () => {
     expect(presenter.screen.dataset.cursorRow).toBe("1"); expect(presenter.focus()).toBe(true);
     expect(presenter.size()).toEqual({ cols: 4, rows: 2 });
     expect(presenter.screen.querySelector('[data-cursor="true"]')?.textContent).toBe("가");
-    expect(root.querySelector('[data-node="terminal-restore-status"]')).not.toBeNull();
+    // The restore-status notice is the plugin's, not the presenter's.
+    expect(root.querySelector('[data-node="terminal-restore-status"]')).toBeNull();
     presenter.input.value = "x"; presenter.input.dispatchEvent(new Event("input")); expect(send).toHaveBeenCalledWith("x");
   });
 

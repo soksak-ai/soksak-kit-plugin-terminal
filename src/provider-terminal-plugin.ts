@@ -216,6 +216,19 @@ export function activateProviderTerminalPlugin(
             ...framePresenter!,
             renderFrame: (frame) => framePresenter!.render(frame),
           };
+      // The plugin owns the one notice inside the pane. It reads the failure the status carries
+      // and takes no pointer events, so the terminal beneath keeps the mouse.
+      const notice = container.ownerDocument.createElement("div");
+      notice.dataset.node = "terminal-restore-status";
+      notice.hidden = true;
+      notice.setAttribute("role", "status");
+      Object.assign(notice.style, {
+        position: "absolute", top: "0", left: "0", right: "0", padding: "4px 8px",
+        font: "12px/1.4 ui-monospace, monospace", pointerEvents: "none", zIndex: "1",
+        background: "var(--card)", color: "var(--fg)",
+      });
+      if (!container.style.position) container.style.position = "relative";
+      container.append(notice);
       presentation = createTerminalPresentationStatus(
         container,
         config.renderer?.delivery === "bytes" ? "bytes" : "frame",
@@ -240,6 +253,8 @@ export function activateProviderTerminalPlugin(
         rendererId: config.renderer?.rendererId ?? `${config.engineId}-frame`,
         rendererProfile: config.renderer?.rendererProfile ?? "web",
         publish(value) {
+          notice.hidden = value.failure === null;
+          notice.textContent = value.failure ? `${value.failure.code}: ${value.failure.message}` : "";
           context.setStatus?.(value.failure ? {
             code: value.failure.code, message: value.failure.message,
           } : null);

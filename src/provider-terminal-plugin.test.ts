@@ -46,6 +46,46 @@ describe("provider-backed terminal plugin", () => {
     const status = await (commands.get("status")!.handler as (params: Record<string, unknown>, context: { pane: string }) => Promise<Record<string, unknown>>)({ view: "pane" }, { pane: "pane" });
     expect(status).toMatchObject({ phase: "live", recoveryOutcome: "fresh", fidelity: "complete", failure: { code: "CHECKPOINT_REJECTED", message: "missing cursor_visible" } });
     expect(root.dataset.terminalFailure).toBe("CHECKPOINT_REJECTED");
+    // The plugin owns one notice inside the pane: the failure is readable there, and the notice
+    // takes no pointer events, so the terminal beneath keeps the mouse.
+    const notices = root.querySelectorAll<HTMLElement>('[data-node="terminal-restore-status"]');
+    expect(notices.length).toBe(1);
+    expect(notices[0].hidden).toBe(false);
+    expect(notices[0].textContent).toContain("CHECKPOINT_REJECTED");
+    expect(notices[0].textContent).toContain("missing cursor_visible");
+    expect(notices[0].style.pointerEvents).toBe("none");
+  });
+
+  it("shows a start failure inside the pane and clears the notice when the terminal is live", async () => {
+    let view: { mount(container: HTMLElement, context: unknown): void } | undefined;
+    let alive = false;
+    const channel = {
+      send: vi.fn(async (request: Record<string, unknown>) => {
+        const command = String(request.command);
+        if (command === "pty.pane") { if (!alive) throw new Error("file does not exist"); return { ok: true, result: { data: { held: false } } }; }
+        const data = command === "pty.open" ? { session: 7 } : command === "terminal.prepareSession" ? { observerToken: "observer" } : {};
+        if (command === "terminal.archived") return { ok: false, error: "not found", result: { code: "NOT_FOUND" } };
+        return { ok: true, result: { data } };
+      }),
+      stream: vi.fn(async () => ({ answer: { ok: true, result: { data: { startSeq: 0 } } }, close: settledClose() })),
+    };
+    const host: ProviderTerminalPluginHost = {
+      windowLabel: () => "window", secrets: { generate: async () => ({ created: true }) },
+      sidecar: { open: async () => channel },
+      ui: { registerView: (_id, provider) => { view = provider; return { dispose() {} }; } },
+      commands: { register: () => ({ dispose() {} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
+    };
+    activateProviderTerminalPlugin(host, [], { pluginId: "plugin", engineId: "vt100", ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-vt100", programId: "terminal-vt100" });
+    const root = document.createElement("div"); document.body.append(root); view!.mount(root, { viewId: "pane" });
+    await vi.waitFor(() => expect(root.dataset.terminalPhase).toBe("blocked"));
+    const notice = root.querySelector<HTMLElement>('[data-node="terminal-restore-status"]')!;
+    expect(notice.hidden).toBe(false);
+    expect(notice.textContent).toContain("START_FAILED");
+    expect(notice.textContent).toContain("file does not exist");
+    alive = true;
+    view!.mount(root, { viewId: "pane" });
+    await vi.waitFor(() => expect(root.dataset.terminalPhase).toBe("live"));
+    expect(root.querySelector<HTMLElement>('[data-node="terminal-restore-status"]')!.hidden).toBe(true);
   });
 
   it("keeps the recorded startup failure readable when diagnostics cannot open a sidecar", async () => {
