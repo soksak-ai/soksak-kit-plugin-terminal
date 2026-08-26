@@ -452,7 +452,12 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     ...(input.cwd ? { cwd: input.cwd } : {}),
     env: { [CALLER_PANE_ENV]: key },
   });
-  const startFresh = async (outcome?: { recoveryOutcome?: "archived" | "continued" }) => {
+  const startFresh = async (outcome?: {
+    phase?: "live" | "degraded-tail";
+    recoveryOutcome?: "archived" | "continued" | "degraded-tail";
+    fidelity?: "complete" | "unavailable";
+    failure?: { code: string; message: string };
+  }) => {
     root.dataset.terminalOperation = "preparing-observer";
     const prepared = requireReply(await binding.recoveryRequest({
       op: "prepareSession", pane: key, cols: 80, rows: 24,
@@ -473,7 +478,11 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     root.dataset.terminalOperation = "ready";
     presentation.markReady();
     status.refresh();
-    status.set("live", { recoveryOutcome: outcome?.recoveryOutcome ?? "fresh", fidelity: "complete" });
+    status.set(outcome?.phase ?? "live", {
+      recoveryOutcome: outcome?.recoveryOutcome ?? "fresh",
+      fidelity: outcome?.fidelity ?? "complete",
+      failure: outcome?.failure,
+    });
   };
   const startWarm = async () => {
     root.dataset.terminalOperation = "subscribing-recovery";
@@ -486,7 +495,13 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     const rehydrated = await binding.recoveryRequest({ op: "rehydrate", pane: key });
     if (stopped) return;
     if (rehydrated.ok !== true && rehydrated.code === "SOURCE_GAP") {
-      await startFresh({ recoveryOutcome: "continued" });
+      await startFresh({
+        phase: "degraded-tail", recoveryOutcome: "degraded-tail", fidelity: "unavailable",
+        failure: {
+          code: "SOURCE_GAP",
+          message: String(rehydrated.message ?? "the terminal-state observer missed source events"),
+        },
+      });
       return;
     }
     const restored = requireReply(rehydrated, "rehydrate");
