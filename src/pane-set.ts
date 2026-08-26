@@ -65,7 +65,7 @@ export interface PaneSet {
   bindLayout(layout: () => Record<string, unknown>): void;
   persist(): void;
   restoreState(): PaneSetRestoreState;
-  dispose(): Promise<void>;
+  dispose(intent?: "detach" | "close"): Promise<void>;
 }
 
 const basename = (path: string): string => path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";
@@ -219,10 +219,10 @@ export function createPaneSet(host: PaneSetHost, input: PaneSetInput): PaneSet {
     restoreState,
     // Unmounting is not closing: the view may be mounted again, and each pane reattaches to the
     // session it left. A pane that is actually closed goes through closePane, which ends it.
-    async dispose() {
+    async dispose(intent = "detach") {
       disposed = true;
       const stops = [...panes.values()].map((pane) => {
-        const stopping = pane.stop();
+        const stopping = pane.stop(intent);
         holdStopBarrier(pane.key, stopping);
         return stopping;
       });

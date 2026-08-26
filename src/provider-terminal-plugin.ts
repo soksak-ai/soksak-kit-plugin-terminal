@@ -41,6 +41,7 @@ export interface ProviderTerminalPluginHost extends PaneSetHost {
       focus?(container: HTMLElement, context: ViewContext, request: { signal: AbortSignal }): void;
       prepareFocusTransfer?(container: HTMLElement): void;
       closeIntent?(container: HTMLElement): "handled" | "pass";
+      closeView?(container: HTMLElement): Promise<void>;
     }): { dispose(): void };
     statusBarItem?(item: {
       id: string; paneId: string; label: string; title?: string; side?: "left" | "right";
@@ -207,11 +208,11 @@ export function activateProviderTerminalPlugin(
     return view && pane ? { view, pane } : undefined;
   };
   const viewOf = (container: HTMLElement) => [...views.values()].find((view) => view.container === container);
-  const disposeView = async (view: MountedView) => {
+  const disposeView = async (view: MountedView, intent: "detach" | "close" = "detach") => {
     views.delete(view.viewId);
     view.stopWatchingPresentation?.();
     view.workbench.dispose();
-    await view.set.dispose();
+    await view.set.dispose(intent);
   };
 
   const provider = {
@@ -256,7 +257,17 @@ export function activateProviderTerminalPlugin(
       viewOf(container)?.set.focused()?.presenter.focus();
     },
     closeIntent(container: HTMLElement): "handled" | "pass" {
-      return viewOf(container)?.workbench.closeIntent() ?? "pass";
+      const view = viewOf(container);
+      if (!view) return "pass";
+      if (view.set.list().length <= 1) {
+        void disposeView(view, "close");
+        return "pass";
+      }
+      return view.workbench.closeIntent();
+    },
+    async closeView(container: HTMLElement) {
+      const view = viewOf(container);
+      if (view) await disposeView(view, "close");
     },
   };
   subscriptions.push(host.ui.registerView("content", provider));

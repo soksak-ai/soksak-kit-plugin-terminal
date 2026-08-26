@@ -17,6 +17,7 @@ type View = {
   mount(container: HTMLElement, context: unknown): void;
   unmount?(container: HTMLElement): void;
   closeIntent?(container: HTMLElement): "handled" | "pass";
+  closeView?(container: HTMLElement): Promise<void>;
 };
 
 // One sidecar channel answering both PTY and recovery commands: sessions count up per open.
@@ -807,18 +808,19 @@ describe("provider-backed terminal plugin", () => {
   });
 
   it("exposes the close intent: one pane passes, a second pane is handled", async () => {
-    const { channel } = fakeSidecars();
+    const { channel, requests } = fakeSidecars();
     const { view, call } = activate(channel);
     const root = document.createElement("div"); document.body.append(root);
     view.mount(root, { viewId: "tab-a" });
     await vi.waitFor(() => expect(root.dataset.terminalPhase).toBe("live"));
-    expect(view.closeIntent!(root)).toBe("pass");
     await call("split", { view: "tab-a", direction: "down" });
     expect(root.querySelector('[data-node="pane/2"]')).not.toBeNull();
     expect(view.closeIntent!(root)).toBe("handled");
     expect(root.querySelector('[data-node="pane/2"]')).toBeNull();
     await expect(call("pane.list", { view: "tab-a" })).resolves.toMatchObject({ focused: "tab-a.1", panes: [{ pane: "tab-a.1" }] });
-    await expect(call("pane.close", { pane: "tab-a.1" })).resolves.toEqual({ closed: false, focused: "tab-a.1" });
+    expect(view.closeIntent!(root)).toBe("pass");
+    await vi.waitFor(() => expect(requests.some((item) => item.command === "pty.close")).toBe(true));
+    await expect(call("pane.close", { pane: "tab-a.1" })).resolves.toEqual({ closed: false, focused: null });
     expect(view.closeIntent!(document.createElement("div"))).toBe("pass");
   });
 });
