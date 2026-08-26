@@ -211,6 +211,17 @@ describe("closing a pane", () => {
     expect(binding.close).toHaveBeenCalledTimes(1);
     expect(binding.detach).not.toHaveBeenCalled();
   });
+  it("ends every session when the owning tab is permanently closed", async () => {
+    const { set, binding, paneRoot } = setup();
+    const first = set.openPane({ root: paneRoot() });
+    const second = set.openPane({ root: paneRoot() });
+    await vi.waitFor(() => expect(first.status.current().phase).toBe("live"));
+    await vi.waitFor(() => expect(second.status.current().phase).toBe("live"));
+
+    await set.dispose("close");
+    expect(binding.close).toHaveBeenCalledTimes(2);
+    expect(binding.detach).not.toHaveBeenCalled();
+  });
 });
 
 describe("reloading a pane set", () => {
