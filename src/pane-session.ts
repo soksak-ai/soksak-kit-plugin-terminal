@@ -410,7 +410,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     ...(input.cwd ? { cwd: input.cwd } : {}),
     env: { [CALLER_PANE_ENV]: key },
   });
-  const startFresh = async () => {
+  const startFresh = async (outcome?: { recoveryOutcome?: "archived" }) => {
     root.dataset.terminalOperation = "preparing-observer";
     const prepared = requireReply(await binding.recoveryRequest({
       op: "prepareSession", pane: key, cols: 80, rows: 24,
@@ -431,7 +431,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     root.dataset.terminalOperation = "ready";
     presentation.markReady();
     status.refresh();
-    status.set("live", { recoveryOutcome: "fresh", fidelity: "complete" });
+    status.set("live", { recoveryOutcome: outcome?.recoveryOutcome ?? "fresh", fidelity: "complete" });
   };
   const startWarm = async () => {
     root.dataset.terminalOperation = "subscribing-recovery";
@@ -487,7 +487,6 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       throw new Error("archived returned no exact output sequence");
     }
     renderedSequence = archivedSequence;
-    writable = false;
     root.dataset.terminalOperation = "ready";
     presentation.markReady();
     status.refresh();
@@ -499,8 +498,16 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     root.dataset.terminalOperation = "checking-live";
     const alive = await binding.paneAlive(key);
     if (stopped) return;
-    if (alive) await startWarm();
-    else if (!await startArchived() && !stopped) await startFresh();
+    if (alive) {
+      await startWarm();
+      return;
+    }
+    // A terminal pane is where a shell runs. An archive is what the last one left on screen; it is
+    // shown, and then a shell is started, so the pane can be typed into rather than standing as a
+    // picture of one that ended.
+    const restored = await startArchived();
+    if (stopped) return;
+    await startFresh({ recoveryOutcome: restored ? "archived" : undefined });
   };
   const capturePrepare = () => presenter.refresh?.();
   window.addEventListener("soksak:capture-prepare", capturePrepare);

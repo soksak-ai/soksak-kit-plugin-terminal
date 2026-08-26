@@ -339,3 +339,25 @@ describe("a pane that is not shown", () => {
     await vi.waitFor(() => expect(recovery.filter((r) => r.op === "frame").length).toBeGreaterThan(asked));
   });
 });
+
+// A terminal pane is where a shell runs. An archive is what the last one left on screen, and the
+// pane shows it and then starts a shell, so the pane can be typed into again.
+describe("a pane whose session ended", () => {
+  it("shows what was archived and starts a shell", async () => {
+    const { binding, recovery } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    binding.paneAlive = vi.fn(async () => false);
+    const original = binding.recoveryRequest;
+    binding.recoveryRequest = vi.fn(async (request: Record<string, unknown>) => {
+      if (request.op === "archived") {
+        recovery.push(request);
+        return { ok: true, code: "OK", data: { uptoSeq: 4, frame: frameOf(["old"]) } };
+      }
+      return original(request);
+    }) as never;
+    const { pane } = mount(binding);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    expect(pane.status.current().recoveryOutcome).toBe("archived");
+    expect(pane.writable).toBe(true);
+    expect(binding.open).toHaveBeenCalled();
+  });
+});
