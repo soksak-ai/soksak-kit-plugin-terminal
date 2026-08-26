@@ -533,8 +533,13 @@ describe("a pane whose engine missed output", () => {
       return original(request);
     }) as never;
     const { pane } = mount(binding);
-    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("degraded-tail"));
     expect(pane.writable).toBe(true);
     expect(sessions).toBe(1);
+    expect(pane.status.current()).toMatchObject({
+      recoveryOutcome: "degraded-tail",
+      fidelity: "unavailable",
+      failure: { code: "SOURCE_GAP" },
+    });
   });
 });
