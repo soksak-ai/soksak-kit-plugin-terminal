@@ -5,6 +5,7 @@ export * from "./terminal-session-binding";
 export * from "./provider-frame-presenter";
 export * from "./pane-session";
 export * from "./pane-set";
+export * from "./pane-stop-barriers";
 export * from "./workbench/split-tree";
 export * from "./workbench/split-layout";
 export * from "./workbench/keymap";

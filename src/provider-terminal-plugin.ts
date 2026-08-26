@@ -9,6 +9,7 @@ import {
 } from "@soksak/soksak-contract-plugin-terminal";
 import { createPaneSet, type PaneSet, type PaneSetContext, type PaneSetHost } from "./pane-set";
 import type { PaneSession, TerminalPresenter, TerminalPresenterFactory, TerminalRendererAdapter } from "./pane-session";
+import { paneStopBarriers } from "./pane-stop-barriers";
 import { createTerminalSessionBinding, type TerminalSessionBinding } from "./terminal-session-binding";
 import { closedTerminalPresentation } from "./terminal-presentation-status";
 import { waitForTerminalConditions } from "./terminal-condition-wait";
@@ -114,7 +115,7 @@ export function activateProviderTerminalPlugin(
   config: ProviderTerminalPluginConfig,
 ): void {
   const views = new Map<string, MountedView>();
-  const stopBarriers = new Map<string, Promise<void>>();
+  const stopBarriers = paneStopBarriers(config.pluginId, document);
   if (config.engines && config.engines.sidecars[config.engineId] !== config.terminalSidecarId) {
     throw new Error(`engines.sidecars.${config.engineId} must name ${config.terminalSidecarId}, the plugin's own engine sidecar`);
   }
