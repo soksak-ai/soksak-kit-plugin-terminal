@@ -92,6 +92,24 @@ describe("pane session", () => {
     expect(pane.renderedOutputSequence).toBe(4);
   });
 
+  // Every frame request names the subscriber whose baseline it advances. A request without one is
+  // refused, and the pane that made it stays blocked with nothing on screen.
+  it("names the subscriber on the frame it asks for after a resize", async () => {
+    const { binding, recovery } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, frame: frameOf(["ab", "cd"]) } }));
+    const { pane, root } = mount(binding, { hostPixels: () => ({ width: 400, height: 200 }) });
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    pane.requestResize();
+    await vi.waitFor(() => expect(recovery.some((request) => request.op === "waitSize")).toBe(true));
+    await vi.waitFor(() => {
+      const after = recovery.slice(recovery.findIndex((request) => request.op === "waitSize"));
+      expect(after.some((request) => request.op === "frame")).toBe(true);
+    });
+    const resizeFrame = recovery.slice(recovery.findIndex((request) => request.op === "waitSize"))
+      .find((request) => request.op === "frame")!;
+    expect(resizeFrame.subscriber).toBe("tab-a.2#1");
+    expect(root.querySelector('[data-node="terminal-screen/2"]')).not.toBeNull();
+  });
+
   it("treats a timed-out frame poll as no frame and re-arms only while output is ahead", async () => {
     let served = 0;
     const { binding, recovery, emit } = fakeBinding(() => {

@@ -334,7 +334,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     requestedSize = { cols, rows };
     const observed = requireReply(await binding.recoveryRequest({ op: "waitSize", pane: key, cols, rows, timeoutMs: 8000 }), "waitSize");
     if (stopped) return;
-    if (!bytesDelivery && !applyFrameSnapshot(requireReply(await binding.recoveryRequest({ op: "frame", pane: key, offset }), "frame"))) {
+    if (!bytesDelivery && !applyFrameSnapshot(requireReply(await binding.recoveryRequest({ op: "frame", pane: key, subscriber: `${key}#${session}`, offset }), "frame"))) {
       throw new Error("resize frame is invalid");
     }
     root.dispatchEvent(new CustomEvent("soksak:terminal-size", { detail: observed }));
