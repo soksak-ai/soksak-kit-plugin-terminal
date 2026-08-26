@@ -423,3 +423,24 @@ describe("a pane opened without a session", () => {
     expect(String(pane.status.current().failure?.message)).toContain("session");
   });
 });
+
+// A pane that came back carries no reason to be worried about. The failure that took it down is
+// what it showed while it was down, and it goes when the pane is live again.
+describe("a pane that came back", () => {
+  it("clears the failure it was showing", async () => {
+    let sessions = 0;
+    let refuse = false;
+    const { binding } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    binding.open = vi.fn(async () => ++sessions);
+    binding.write = vi.fn(async () => { if (refuse) throw new Error("no session 1 in this daemon"); });
+    const { pane } = mount(binding);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+
+    refuse = true;
+    pane.sendInput("a");
+    await vi.waitFor(() => expect(sessions).toBe(2));
+    refuse = false;
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    await vi.waitFor(() => expect(pane.status.current().failure).toBeNull());
+  });
+});

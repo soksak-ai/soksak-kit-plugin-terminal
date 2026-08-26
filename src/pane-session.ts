@@ -530,6 +530,17 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     session = 0;
     writable = false;
     restarting = start()
+      .then(() => {
+        // A pane that came back carries no reason to be worried about: the failure that took it
+        // down is what it showed while it was down. A failure the pane did not recover from — a
+        // rejected checkpoint, say — is set by whatever recorded it and stays.
+        const current = status.current();
+        if (!stopped && current.phase === "live" && current.failure) {
+          status.set("live", {
+            recoveryOutcome: current.recoveryOutcome, fidelity: current.fidelity, failure: null,
+          });
+        }
+      })
       .catch((error) => {
         if (!stopped) status.set("blocked", {
           failure: { code: "START_FAILED", message: String(error) },
