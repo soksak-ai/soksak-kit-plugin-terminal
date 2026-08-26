@@ -19,8 +19,16 @@ export interface TerminalSessionHost {
   terminal?: { observe?(paneId: string, bytes: Uint8Array): void };
 }
 
+export interface TerminalSessionOpenOptions {
+  cwd?: string;
+  env?: Record<string, string>;
+}
+
 export interface TerminalSessionBinding {
-  open(paneId: string, cols: number, rows: number, replay: "none" | { leaseToken: string }, observerToken?: string): Promise<number>;
+  open(
+    paneId: string, cols: number, rows: number, replay: "none" | { leaseToken: string },
+    observerToken?: string, options?: TerminalSessionOpenOptions,
+  ): Promise<number>;
   write(session: number, data: string): Promise<void>;
   resize(session: number, cols: number, rows: number): Promise<void>;
   close(session: number): Promise<void>;
@@ -37,6 +45,9 @@ export interface TerminalSessionBindingOptions {
   terminalSidecarId: string;
   checkpointKey?: string;
   onOperation?: (operation: string) => void;
+  // undefined: every delivered byte reaches host.terminal.observe under its pane id.
+  // null: the caller feeds the host decoder itself. A function replaces the host feed.
+  observe?: ((paneId: string, bytes: Uint8Array) => void) | null;
 }
 
 const KEY_ENV = "SOKSAK_TERMINAL_CHECKPOINT_KEY";
@@ -52,6 +63,10 @@ export function createTerminalSessionBinding(
   const answer = (response: Record<string, unknown>) => {
     if (response.ok !== true) throw new Error(typeof response.error === "string" ? response.error : "sidecar refused request");
     return ((response.result as { data?: unknown } | undefined)?.data ?? {}) as Record<string, unknown>;
+  };
+  const observe = (paneId: string, bytes: Uint8Array) => {
+    if (options.observe === undefined) host.terminal?.observe?.(paneId, bytes);
+    else options.observe?.(paneId, bytes);
   };
   let ptyPromise: Promise<TerminalSidecarChannel> | null = null;
   const pty = () => (ptyPromise ??= host.sidecar.open(options.ptySidecarId));
@@ -124,12 +139,15 @@ export function createTerminalSessionBinding(
     return shell;
   })());
   return {
-    async open(paneId, cols, rows, replay, observerToken) {
+    async open(paneId, cols, rows, replay, observerToken, openOptions) {
       const channel = await pty();
       const shell = await loginShell();
       const opened = answer(await channel.send(request("pty.open", {
         paneId, cols, rows, shell, windowLabel: host.windowLabel(),
         ...(observerToken ? { observerToken } : {}),
+        ...(openOptions?.cwd ? { cwd: openOptions.cwd } : {}),
+        // The PTY contract carries the environment as [name, value] pairs.
+        ...(openOptions?.env ? { env: Object.entries(openOptions.env) } : {}),
       })));
       const session = Number(opened.session);
       const leaseToken = replay === "none" ? undefined : replay.leaseToken;
@@ -142,7 +160,7 @@ export function createTerminalSessionBinding(
         const subscribed = readers.get(session);
         if (subscribed?.size) subscribed.forEach((reader) => reader(bytes, throughSeq));
         else pending.set(session, [...(pending.get(session) ?? []), { bytes, throughSeq }]);
-        host.terminal?.observe?.(paneId, bytes);
+        observe(paneId, bytes);
       };
       const stream = await channel.stream(request(
         leaseToken ? "pty.attachLease" : "pty.attach",

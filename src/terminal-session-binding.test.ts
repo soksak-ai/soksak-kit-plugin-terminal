@@ -127,4 +127,39 @@ describe("shared terminal session binding", () => {
     await detaching;
     expect(order.slice(-2)).toEqual(["stream.close", "pty.detachRenderer"]);
   });
+  it("passes cwd and environment pairs to pty.open and routes bytes to the observe option", async () => {
+    const sent: Record<string, unknown>[] = [];
+    let onBytes: ((bytes: Uint8Array) => void) | undefined;
+    const channel: TerminalSidecarChannel = {
+      send: vi.fn(async (request) => {
+        sent.push(request);
+        const data = request.command === "pty.open" ? { session: 3 } : {};
+        return { ok: true, result: { data } };
+      }),
+      stream: vi.fn(async (_request, handlers) => {
+        onBytes = handlers.onBytes;
+        return { answer: { ok: true, result: { data: { startSeq: 0 } } }, close: settledClose() };
+      }),
+    };
+    const hostObserved: string[] = [];
+    const observed: Array<[string, number[]]> = [];
+    const binding = createTerminalSessionBinding({
+      windowLabel: () => "window-a",
+      commands: { execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
+      sidecar: { open: async () => channel },
+      terminal: { observe: (paneId) => { hostObserved.push(paneId); } },
+    }, {
+      ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-vt100",
+      observe: (paneId, bytes) => { observed.push([paneId, [...bytes]]); },
+    });
+
+    await binding.open("tab-a.2", 80, 24, "none", "observer-a", { cwd: "/work", env: { SOKSAK_CALLER_PANE: "tab-a.2" } });
+    onBytes!(new Uint8Array([65]));
+
+    expect(sent.find((value) => value.command === "pty.open")).toMatchObject({
+      args: { request: { paneId: "tab-a.2", cwd: "/work", env: [["SOKSAK_CALLER_PANE", "tab-a.2"]] } },
+    });
+    expect(observed).toEqual([["tab-a.2", [65]]]);
+    expect(hostObserved).toEqual([]);
+  });
 });

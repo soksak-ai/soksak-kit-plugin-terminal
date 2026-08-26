@@ -1,30 +1,32 @@
 import {
   TERMINAL_PLUGIN_COMMANDS,
   TERMINAL_PLUGIN_COMMAND_SCHEMAS,
+  parsePaneKey,
+  type TerminalPaneSummary,
   type TerminalPluginCommand,
   type TerminalPluginPublicStatus,
+  type TerminalPluginViewStatus,
 } from "@soksak/soksak-contract-plugin-terminal";
-import { createProviderFramePresenter, type ProviderFrame } from "./provider-frame-presenter";
-import { createTerminalSessionBinding, type TerminalSessionBinding, type TerminalSessionHost } from "./terminal-session-binding";
-import { createTerminalStatusController } from "./terminal-status-publication";
-import {
-  closedTerminalPresentation,
-  createTerminalPresentationStatus,
-} from "./terminal-presentation-status";
+import { createPaneSet, type PaneSet, type PaneSetContext, type PaneSetHost } from "./pane-set";
+import type { PaneSession, TerminalPresenter, TerminalPresenterFactory, TerminalRendererAdapter } from "./pane-session";
+import { createTerminalSessionBinding, type TerminalSessionBinding } from "./terminal-session-binding";
+import { closedTerminalPresentation } from "./terminal-presentation-status";
 import { waitForTerminalConditions } from "./terminal-condition-wait";
 import { waitForTerminalSize } from "./terminal-size-wait";
-import { createTerminalResizeWorker } from "./terminal-resize-worker";
 import { readTerminalTheme } from "./terminal-theme";
 import { terminalResizeStatus } from "./terminal-resize-status";
-import { observeTerminalLayout, type TerminalLayoutEvents } from "./terminal-layout-observer";
+import type { TerminalLayoutEvents } from "./terminal-layout-observer";
+import { parseRestoreState } from "./workbench/restore-state";
+import type { PaneDirection } from "./workbench/split-layout";
+import { createWorkbench, type Workbench } from "./workbench/workbench";
 
-interface ViewContext {
+export interface ViewContext extends PaneSetContext {
   viewId?: string | null;
-  setStatus?: (status: { code: string; message?: string } | null) => void;
+  paneId?: string | null;
+  restore?: { cwd: string | null; state: unknown } | null;
 }
 
-export interface ProviderTerminalPluginHost extends TerminalSessionHost {
-  locale?(): string;
+export interface ProviderTerminalPluginHost extends PaneSetHost {
   events?: TerminalLayoutEvents & {
     on(event: "window.gone", callback: (payload: { windowLabel?: string }) => void): { dispose(): void };
   };
@@ -33,6 +35,8 @@ export interface ProviderTerminalPluginHost extends TerminalSessionHost {
       mount(container: HTMLElement, context: ViewContext): void;
       unmount?(container: HTMLElement): void;
       focus?(container: HTMLElement, context: ViewContext, request: { signal: AbortSignal }): void;
+      prepareFocusTransfer?(container: HTMLElement): void;
+      closeIntent?(container: HTMLElement): "handled" | "pass";
     }): { dispose(): void };
     statusBarItem?(item: {
       id: string; paneId: string; label: string; title?: string; side?: "left" | "right";
@@ -44,14 +48,6 @@ export interface ProviderTerminalPluginHost extends TerminalSessionHost {
   };
   // The plugin's user settings (manifest configuration); the engine selection is read here.
   settings?: { get(key: string): unknown };
-  terminal?: TerminalSessionHost["terminal"] & {
-    registerIo?(pane: string, io: {
-      readBuffer(lines?: number): string;
-      sendInput(data: string): void;
-    }): { dispose(): void };
-    getCwd?(pane: string): string | undefined;
-    onCwd?(pane: string, callback: (cwd: string) => void): { dispose(): void };
-  };
 }
 
 export interface ProviderTerminalPluginConfig {
@@ -65,32 +61,13 @@ export interface ProviderTerminalPluginConfig {
   // table. Every listed sidecar is a runtime dependency the manifest declares.
   engines?: { setting: string; sidecars: Record<string, string> };
   renderer?: TerminalRendererAdapter;
+  // Frame presenter factory; the kit's own frame presenter when absent.
+  presenter?: TerminalPresenterFactory;
+  // "workbench" (default): panes keyed "<view>.<k>" with splitting. "single": one bare pane keyed
+  // by the view id, no splitting.
+  layout?: "single" | "workbench";
   extensions?: TerminalCommandExtension[];
   label?: { en: string; ko: string };
-}
-
-export interface TerminalPresenter {
-  root: HTMLElement;
-  size(): { cols: number; rows: number };
-  measure?(): { cols: number; rows: number };
-  fit?(): void;
-  renderFrame?(frame: ProviderFrame): void;
-  applySnapshot?(snapshot: Record<string, unknown>, archived: boolean): Promise<void> | void;
-  writeOutput?(bytes: Uint8Array): Promise<void>;
-  onRendered?(callback: (durationMs: number) => void): { dispose(): void };
-  read(lines?: number): string;
-  waitForText(contains: string, timeoutMs: number): Promise<string>;
-  focus(): boolean;
-  prepareFocusTransfer?(): void;
-  refresh?(): void;
-  dispose(): void;
-}
-
-export interface TerminalRendererAdapter {
-  delivery: "frames" | "bytes";
-  rendererId: string;
-  rendererProfile?: "web" | "native-surface";
-  create(container: HTMLElement, pane: string, send: (text: string) => void): TerminalPresenter;
 }
 
 export interface TerminalCommandExtension {
@@ -102,40 +79,51 @@ export interface TerminalCommandExtension {
   } | undefined): unknown;
 }
 
-interface MountedScreen {
-  binding: TerminalSessionBinding;
-  engineId: string;
-  pane: string;
-  presenter: TerminalPresenter;
-  session: number;
-  status: ReturnType<typeof createTerminalStatusController>;
-  presentation: ReturnType<typeof createTerminalPresentationStatus>;
-  requestedSize: { cols: number; rows: number } | null;
-  renderedOutputSequence: number | null;
-  writable: boolean;
-  stop(): Promise<void>;
+interface MountedView {
+  viewId: string;
+  container: HTMLElement;
+  set: PaneSet;
+  workbench: Workbench;
 }
+interface Target { view: MountedView; pane: PaneSession }
+type CommandContext = { pane?: string } | undefined;
 
 const viewParam = { type: "string", description: { en: "Terminal view id", ko: "터미널 뷰 ID" } };
+const paneParam = { type: "string", description: { en: "Pane key (<view>.<k>)", ko: "판 키 (<view>.<k>)" } };
+const scoped = (params: Record<string, unknown> = {}) => ({ view: viewParam, pane: paneParam, ...params });
+const DIRECTIONS: readonly PaneDirection[] = ["left", "right", "up", "down"];
+const isDirection = (value: unknown): value is PaneDirection => DIRECTIONS.includes(value as PaneDirection);
+
+const paneSummary = (pane: PaneSession): TerminalPaneSummary => {
+  const size = pane.presenter.size();
+  return {
+    pane: pane.key, engineId: pane.engineId, phase: pane.status.current().phase,
+    cols: size.cols, rows: size.rows, offset: pane.offset, historySize: pane.historySize,
+    title: pane.title, cwd: pane.cwd(),
+  };
+};
 
 export function activateProviderTerminalPlugin(
   host: ProviderTerminalPluginHost,
   subscriptions: { dispose(): void }[],
   config: ProviderTerminalPluginConfig,
 ): void {
-  const screens = new Map<string, MountedScreen>();
+  const views = new Map<string, MountedView>();
   const stopBarriers = new Map<string, Promise<void>>();
   if (config.engines && config.engines.sidecars[config.engineId] !== config.terminalSidecarId) {
     throw new Error(`engines.sidecars.${config.engineId} must name ${config.terminalSidecarId}, the plugin's own engine sidecar`);
   }
   // The engine of a new pane: the user's setting when it names an offered engine, the plugin's
-  // engine otherwise. A pane keeps the engine it was mounted with.
+  // engine otherwise. A pane keeps the engine it was opened with.
   const engineSelection = (): { engineId: string; terminalSidecarId: string } => {
     if (!config.engines) return { engineId: config.engineId, terminalSidecarId: config.terminalSidecarId };
     const chosen = host.settings?.get(config.engines.setting);
     const engineId = typeof chosen === "string" && chosen in config.engines.sidecars ? chosen : config.engineId;
     return { engineId, terminalSidecarId: config.engines.sidecars[engineId] };
   };
+  const sidecarOf = (engineId: string): string | undefined => config.engines
+    ? config.engines.sidecars[engineId]
+    : engineId === config.engineId ? config.terminalSidecarId : undefined;
   const bindings = new Map<string, TerminalSessionBinding>();
   const bindingFor = (terminalSidecarId: string): TerminalSessionBinding => {
     let bound = bindings.get(terminalSidecarId);
@@ -143,9 +131,13 @@ export function activateProviderTerminalPlugin(
       bound = createTerminalSessionBinding(host, {
         ptySidecarId: config.ptySidecarId,
         terminalSidecarId,
+        // The pane set feeds the host decoder under the view id, focused pane only.
+        observe: null,
         onOperation(operation) {
-          for (const screen of screens.values()) {
-            if (screen.binding === bound) screen.presenter.root.dataset.terminalOperation = operation;
+          for (const view of views.values()) {
+            for (const pane of view.set.list()) {
+              if (pane.binding === bound) pane.root.dataset.terminalOperation = operation;
+            }
           }
         },
       });
@@ -153,8 +145,13 @@ export function activateProviderTerminalPlugin(
     }
     return bound;
   };
-  const diagnosticsOrEmpty = async () => {
-    try { return await bindingFor(engineSelection().terminalSidecarId).diagnostics(); }
+  const engineFor = (requested?: string): { engineId: string; binding: TerminalSessionBinding } => {
+    const selected = engineSelection();
+    const engineId = requested && sidecarOf(requested) ? requested : selected.engineId;
+    return { engineId, binding: bindingFor(sidecarOf(engineId) ?? selected.terminalSidecarId) };
+  };
+  const diagnosticsOrEmpty = async (binding: TerminalSessionBinding) => {
+    try { return await binding.diagnostics(); }
     catch { return { pty: {}, recovery: {} }; }
   };
   const windowGone = host.events?.on("window.gone", (payload?: { windowLabel?: string }) => {
@@ -181,498 +178,114 @@ export function activateProviderTerminalPlugin(
     if (disposable) subscriptions.push(disposable);
   };
 
-  const target = (params: Record<string, unknown>, context?: { pane?: string }): MountedScreen | undefined => {
-    if (typeof params.view === "string") return screens.get(params.view);
+  // view: the named view; else the caller's own view; else the only view.
+  const viewFor = (params: Record<string, unknown>, context: CommandContext): MountedView | undefined => {
+    if (typeof params.view === "string") return views.get(params.view);
     if (typeof context?.pane === "string") {
-      const contextual = screens.get(context.pane);
+      const contextual = views.get(context.pane);
       if (contextual) return contextual;
     }
-    if (screens.size === 1) return screens.values().next().value;
+    if (views.size === 1) return views.values().next().value;
     return undefined;
   };
+  // pane wins; a view resolves to its focused pane.
+  const target = (params: Record<string, unknown>, context: CommandContext): Target | undefined => {
+    if (typeof params.pane === "string") {
+      const owner = parsePaneKey(params.pane)?.viewId ?? params.pane;
+      const view = views.get(owner);
+      const pane = view?.set.get(params.pane);
+      return view && pane ? { view, pane } : undefined;
+    }
+    const view = viewFor(params, context);
+    const pane = view?.set.focused();
+    return view && pane ? { view, pane } : undefined;
+  };
+  const viewOf = (container: HTMLElement) => [...views.values()].find((view) => view.container === container);
+  const disposeView = (view: MountedView) => {
+    views.delete(view.viewId);
+    view.workbench.dispose();
+    void view.set.dispose();
+  };
 
-  const view = {
+  const provider = {
     mount(container: HTMLElement, context: ViewContext) {
-      const pane = context.viewId ?? "";
-      const { engineId, terminalSidecarId } = engineSelection();
-      const binding = bindingFor(terminalSidecarId);
-      if (!pane) throw new Error("terminal view requires a view id");
-      const readyToStart = screens.get(pane)?.stop() ?? stopBarriers.get(pane) ?? Promise.resolve();
-
-      let session = 0;
-      let stopped = false;
-      let output: { dispose(): void } | undefined;
-      let io: { dispose(): void } | undefined;
-      let requestedSequence = 0;
-      let renderedSequence: number | null = null;
-      let rendering = false;
-      // ReturnType<typeof setTimeout>: a consumer that type-checks this source with Node types sees Timeout, not number.
-      let frameRequest: ReturnType<typeof setTimeout> | null = null;
-      let byteFrameRequest: ReturnType<typeof setTimeout> | null = null;
-      let writingOutput = false;
-      let pendingOutput: Uint8Array[] = [];
-      let pendingOutputSequence = 0;
-      let writable = false;
-      let requestedSize: { cols: number; rows: number } | null = null;
-      let startTask = Promise.resolve();
-      let writeQueue = Promise.resolve();
-      let stopping: Promise<void> | null = null;
-      let presentation: ReturnType<typeof createTerminalPresentationStatus>;
-      let status: ReturnType<typeof createTerminalStatusController>;
-      const writeToPty = (text: string, acceptedInput: boolean) => {
-        if (acceptedInput) {
-          presentation.markInputAccepted();
-          status?.refresh();
-        }
-        if (!writable || !session) return;
-        const attached = session;
-        writeQueue = writeQueue.then(() => binding.write(attached, text)).then(() => {
-          presentation.markPtyWrite();
-          status.refresh();
-        }).catch((error) => {
-          if (!stopped) status?.set("blocked", {
-            failure: { code: "INPUT_WRITE_FAILED", message: String(error) },
-            fidelity: "unavailable",
-          });
-        });
-      };
-      const framePresenter = config.renderer
-        ? undefined
-        : createProviderFramePresenter(container, (text) => writeToPty(text, true));
-      const presenter: TerminalPresenter = config.renderer
-        ? config.renderer.create(container, pane, (text) => writeToPty(text, true))
-        : {
-            ...framePresenter!,
-            renderFrame: (frame) => framePresenter!.render(frame),
-          };
-      // The plugin owns the one notice inside the pane. It reads the failure the status carries
-      // and takes no pointer events, so the terminal beneath keeps the mouse.
-      const notice = container.ownerDocument.createElement("div");
-      notice.dataset.node = "terminal-restore-status";
-      notice.hidden = true;
-      notice.setAttribute("role", "status");
-      Object.assign(notice.style, {
-        position: "absolute", top: "0", left: "0", right: "0", padding: "4px 8px",
-        font: "12px/1.4 ui-monospace, monospace", pointerEvents: "none", zIndex: "1",
-        background: "var(--card)", color: "var(--fg)",
-      });
-      if (!container.style.position) container.style.position = "relative";
-      container.append(notice);
-      presentation = createTerminalPresentationStatus(
-        container,
-        config.renderer?.delivery === "bytes" ? "bytes" : "frame",
-        () => readTerminalTheme(container.ownerDocument.documentElement),
-      );
-      if (config.renderer?.delivery === "bytes" && (!presenter.writeOutput || !presenter.applySnapshot || !presenter.onRendered)) {
-        throw new Error("byte renderer requires parser and rendered-frame completion contracts");
-      }
-      const terminalSize = () => {
-        presenter.fit?.();
-        const measured = presenter.measure?.() ?? presenter.size();
-        if (measured.cols > 0 && measured.rows > 0) return measured;
-        return {
-          cols: Math.max(1, Math.floor(container.clientWidth / 8)),
-          rows: Math.max(1, Math.floor(container.clientHeight / 16)),
-        };
-      };
-      status = createTerminalStatusController({
-        root: container,
-        pluginId: config.pluginId,
-        engineId,
-        rendererId: config.renderer?.rendererId ?? `${config.engineId}-frame`,
-        rendererProfile: config.renderer?.rendererProfile ?? "web",
-        publish(value) {
-          notice.hidden = value.failure === null;
-          notice.textContent = value.failure ? `${value.failure.code}: ${value.failure.message}` : "";
-          context.setStatus?.(value.failure ? {
-            code: value.failure.code, message: value.failure.message,
-          } : null);
+      const viewId = context.viewId ?? "";
+      if (!viewId) throw new Error("terminal view requires a view id");
+      const existing = views.get(viewId);
+      if (existing) disposeView(existing);
+      const saved = parseRestoreState(context.restore?.state);
+      const set = createPaneSet(host, {
+        viewId, container, context,
+        config: {
+          pluginId: config.pluginId, engineId: config.engineId, renderer: config.renderer,
+          presenter: config.presenter, label: config.label,
         },
-        presentation: presentation.current,
+        engineFor, stopBarriers, restore: saved ? { next: saved.next } : null,
       });
-      const focusChanged = (event: FocusEvent) => {
-        const node = event.target instanceof HTMLElement ? event.target.dataset.node : undefined;
-        if (node !== "terminal-input") return;
-        presentation.markFocused(event.type === "focusin");
-        status.refresh();
-      };
-      container.addEventListener("focusin", focusChanged);
-      container.addEventListener("focusout", focusChanged);
-
-      const markRendered = (startedAt: number) => {
-        presentation.markRendered(Math.max(0, performance.now() - startedAt));
-        status.refresh();
-      };
-      const presenterRendering = presenter.onRendered?.((durationMs) => {
-        presentation.markRendered(durationMs);
-        status.refresh();
+      const workbench = createWorkbench(container, set, {
+        viewId, restore: context.restore?.state, restoreCwd: context.restore?.cwd ?? null,
+        layout: config.layout ?? "workbench", events: host.events,
       });
-
-      const applyFrame = (value: unknown): boolean => {
-        if (!value || typeof value !== "object") return false;
-        const startedAt = performance.now();
-        presenter.renderFrame?.(value as ProviderFrame);
-        markRendered(startedAt);
-        return true;
-      };
-      const applyFrameSnapshot = (value: Record<string, unknown>): boolean => {
-        const outputSequence = Number(value.outputSequence);
-        if (!Number.isSafeInteger(outputSequence) || outputSequence < 0 || !applyFrame(value.frame)) return false;
-        renderedSequence = outputSequence;
-        return true;
-      };
-      const requireReply = (reply: Record<string, unknown>, operation: string) => {
-        if (reply.ok !== true) {
-          const code = typeof reply.code === "string" ? reply.code : "FAILED";
-          const message = typeof reply.message === "string" ? reply.message : "request failed";
-          throw new Error(`${operation} failed (${code}): ${message}`);
-        }
-        return reply.data && typeof reply.data === "object"
-          ? reply.data as Record<string, unknown> : {};
-      };
-      const reportFrameFailure = (error: unknown) => {
-        if (stopped) return;
-        status.set("blocked", {
-          failure: { code: "FRAME_FAILED", message: String(error) }, fidelity: "unavailable",
-        });
-      };
-      const flushByteOutput = async () => {
-        if (writingOutput || stopped || pendingOutput.length === 0 || !presenter.writeOutput) return;
-        const chunks = pendingOutput;
-        const throughSeq = pendingOutputSequence;
-        pendingOutput = [];
-        const size = chunks.reduce((total, bytes) => total + bytes.length, 0);
-        const bytes = new Uint8Array(size);
-        let offset = 0;
-        for (const chunk of chunks) {
-          bytes.set(chunk, offset);
-          offset += chunk.length;
-        }
-        writingOutput = true;
-        try {
-          await presenter.writeOutput(bytes);
-          renderedSequence = Math.max(renderedSequence ?? 0, throughSeq);
-          status.refresh();
-        } finally {
-          writingOutput = false;
-          scheduleByteOutput();
-        }
-      };
-      // Output is applied on a task, not on an animation frame: WebKit stops requestAnimationFrame
-      // for an occluded window, and output that waits for a frame never reaches the presenter.
-      // A burst arriving within one task still coalesces into one write.
-      const scheduleByteOutput = () => {
-        if (byteFrameRequest !== null || writingOutput || stopped || pendingOutput.length === 0) return;
-        byteFrameRequest = setTimeout(() => {
-          byteFrameRequest = null;
-          void flushByteOutput().catch(reportFrameFailure);
-        }, 0);
-      };
-      const scheduleRenderLatest = () => {
-        if (frameRequest !== null || rendering || stopped
-            || requestedSequence <= (renderedSequence ?? -1)) return;
-        frameRequest = setTimeout(() => {
-          frameRequest = null;
-          void renderLatest().catch(reportFrameFailure);
-        }, 0);
-      };
-      const renderLatest = async (): Promise<void> => {
-        if (rendering || stopped || requestedSequence <= (renderedSequence ?? -1)) return;
-        rendering = true;
-        try {
-          const sequence = requestedSequence;
-          if (config.renderer?.delivery !== "bytes") {
-            const response = await binding.recoveryRequest({ op: "frame", pane, afterSequence: sequence });
-            if (!applyFrameSnapshot(requireReply(response, "frame"))) throw new Error("frame response has no exact output sequence");
-          }
-        } finally {
-          rendering = false;
-          scheduleRenderLatest();
-        }
-      };
-      let requestResize = () => {};
-      const resizeSession = async () => {
-        if (!session || container.clientWidth <= 0 || container.clientHeight <= 0) return;
-        const { cols, rows } = terminalSize();
-        await binding.resize(session, cols, rows);
-        requestedSize = { cols, rows };
-        const observed = requireReply(await binding.recoveryRequest({ op: "waitSize", pane, cols, rows, timeoutMs: 8000 }), "waitSize");
-        if (stopped) return;
-        if (config.renderer?.delivery !== "bytes" && !applyFrameSnapshot(requireReply(await binding.recoveryRequest({ op: "frame", pane }), "frame"))) {
-          throw new Error("resize frame is invalid");
-        }
-        container.dispatchEvent(new CustomEvent("soksak:terminal-size", { detail: observed }));
-        const latest = terminalSize();
-        if (!stopped && (latest.cols !== cols || latest.rows !== rows)) requestResize();
-      };
-      const reportResizeFailure = (error: unknown) => {
-        if (stopped) return;
-        status.set("blocked", {
-          failure: { code: "RESIZE_FAILED", message: String(error) }, fidelity: "unavailable",
-        });
-      };
-      const resizeWorker = createTerminalResizeWorker(resizeSession, reportResizeFailure);
-      requestResize = () => resizeWorker.request();
-      const attach = (opened: number) => {
-        session = opened;
-        output = binding.onData(session, (bytes, throughSeq) => {
-          if (config.renderer?.delivery === "bytes") {
-            pendingOutput.push(bytes.slice());
-            pendingOutputSequence = Math.max(pendingOutputSequence, throughSeq);
-            scheduleByteOutput();
-            return;
-          }
-          requestedSequence = Math.max(requestedSequence, throughSeq);
-          scheduleRenderLatest();
-        });
-        writable = true;
-        io = host.terminal?.registerIo?.(pane, {
-          readBuffer: (lines) => presenter.read(lines),
-          sendInput: (data) => writeToPty(data, false),
-        });
-        requestResize();
-      };
-      const detachIfStopped = async (opened: number): Promise<boolean> => {
-        if (!stopped) return false;
-        await binding.detach(opened);
-        return true;
-      };
-      const startFresh = async () => {
-        container.dataset.terminalOperation = "preparing-observer";
-        const prepared = requireReply(await binding.recoveryRequest({
-          op: "prepareSession", pane, cols: 80, rows: 24,
-        }), "prepareSession");
-        if (stopped) return;
-        const token = typeof prepared.observerToken === "string"
-          ? prepared.observerToken : "";
-        if (!token) throw new Error("prepareSession returned no observer token");
-        container.dataset.terminalOperation = "opening-pty";
-        const opened = await binding.open(pane, 80, 24, "none", token);
-        if (await detachIfStopped(opened)) return;
-        requestedSize = { cols: 80, rows: 24 };
-        container.dataset.terminalOperation = "subscribing-recovery";
-        requireReply(await binding.recoveryRequest({
-          op: "ensureSession", pane, cols: 80, rows: 24, observerToken: token,
-        }), "ensureSession");
-        if (await detachIfStopped(opened)) return;
-        attach(opened);
-        container.dataset.terminalOperation = "ready";
-        presentation.markReady();
-        status.refresh();
-        status.set("live", { recoveryOutcome: "fresh", fidelity: "complete" });
-      };
-      const startWarm = async () => {
-        container.dataset.terminalOperation = "subscribing-recovery";
-        requireReply(await binding.recoveryRequest({
-          op: "ensureSession", pane, cols: 80, rows: 24,
-        }), "ensureSession");
-        if (stopped) return;
-        const restored = requireReply(await binding.recoveryRequest({
-          op: "rehydrate", pane,
-        }), "rehydrate");
-        if (stopped) return;
-        const leaseToken = typeof restored.leaseToken === "string"
-          ? restored.leaseToken : "";
-        if (!leaseToken || (config.renderer?.delivery === "bytes"
-          ? !presenter.applySnapshot
-          : !applyFrame(restored.frame))) {
-          throw new Error("rehydrate returned no frame or snapshot lease");
-        }
-        if (config.renderer?.delivery === "bytes") {
-          await presenter.applySnapshot!(restored, false);
-        }
-        const restoredSequence = Number(restored.uptoSeq);
-        if (!Number.isSafeInteger(restoredSequence) || restoredSequence < 0) {
-          throw new Error("rehydrate returned no exact output sequence");
-        }
-        renderedSequence = restoredSequence;
-        status.set("applying-snapshot", {
-          recoveryOutcome: "continued", fidelity: "complete",
-        });
-        container.dataset.terminalOperation = "attaching-snapshot-lease";
-        const opened = await binding.open(pane, 80, 24, { leaseToken });
-        if (await detachIfStopped(opened)) return;
-        requestedSize = { cols: 80, rows: 24 };
-        attach(opened);
-        container.dataset.terminalOperation = "ready";
-        presentation.markReady();
-        status.refresh();
-        status.set("live", { recoveryOutcome: "continued", fidelity: "complete" });
-      };
-      const startArchived = async (): Promise<boolean> => {
-        container.dataset.terminalOperation = "checking-archive";
-        const archived = await binding.recoveryRequest({ op: "archived", pane });
-        if (stopped) return true;
-        if (archived.ok !== true) {
-          if (archived.code === "NOT_FOUND") return false;
-          if (archived.code === "CHECKPOINT_CORRUPT") {
-            status.set("preparing-recovery", {
-              recoveryOutcome: "fresh", fidelity: "unavailable",
-              failure: { code: "CHECKPOINT_REJECTED", message: String(archived.message ?? "checkpoint is corrupt") },
-            });
-            return false;
-          }
-          requireReply(archived, "archived");
-        }
-        const data = requireReply(archived, "archived");
-        if (config.renderer?.delivery === "bytes") {
-          if (!presenter.applySnapshot) throw new Error("byte presenter cannot restore snapshots");
-          await presenter.applySnapshot(data, true);
-        } else if (!applyFrame(data.frame)) throw new Error("archived returned no frame");
-        const archivedSequence = Number(data.uptoSeq);
-        if (!Number.isSafeInteger(archivedSequence) || archivedSequence < 0) {
-          throw new Error("archived returned no exact output sequence");
-        }
-        renderedSequence = archivedSequence;
-        writable = false;
-        container.dataset.terminalOperation = "ready";
-        presentation.markReady();
-        status.refresh();
-        status.set("archived", {
-          recoveryOutcome: "archived", fidelity: "complete",
-        });
-        return true;
-      };
-      const start = async () => {
-        status.set("preparing-recovery");
-        container.dataset.terminalOperation = "checking-live";
-        const alive = await binding.paneAlive(pane);
-        if (stopped) return;
-        if (alive) await startWarm();
-        else if (!await startArchived() && !stopped) await startFresh();
-      };
-
-      const resize = observeTerminalLayout({ element: container, resized: requestResize, events: host.events });
-      const capturePrepare = () => presenter.refresh?.();
-      window.addEventListener("soksak:capture-prepare", capturePrepare);
-      const viewDisposables: { dispose(): void }[] = [];
-      const entry: MountedScreen = {
-        binding,
-        engineId,
-        pane,
-        presenter,
-        get session() { return session; },
-        status,
-        presentation,
-        get requestedSize() { return requestedSize; },
-        get renderedOutputSequence() { return renderedSequence; },
-        get writable() { return writable; },
-        stop() {
-          if (stopping) return stopping;
-          stopped = true;
-          writable = false;
-          if (frameRequest !== null) clearTimeout(frameRequest);
-          frameRequest = null;
-          if (byteFrameRequest !== null) clearTimeout(byteFrameRequest);
-          byteFrameRequest = null;
-          pendingOutput = [];
-          resize.dispose();
-          container.removeEventListener("focusin", focusChanged);
-          container.removeEventListener("focusout", focusChanged);
-          window.removeEventListener("soksak:capture-prepare", capturePrepare);
-          output?.dispose();
-          io?.dispose();
-          presenterRendering?.dispose();
-          viewDisposables.splice(0).forEach((item) => item.dispose());
-          const attached = session;
-          const pendingWrites = writeQueue;
-          session = 0;
-          status.close();
-          presenter.dispose();
-          stopping = (async () => {
-            await pendingWrites;
-            if (attached) await binding.detach(attached);
-            await startTask.catch(() => {});
-          })();
-          stopBarriers.set(pane, stopping);
-          void stopping.finally(() => {
-            if (stopBarriers.get(pane) === stopping) stopBarriers.delete(pane);
-          });
-          return stopping;
-        },
-      };
-      screens.set(pane, entry);
-      startTask = readyToStart.then(async () => {
-        if (!stopped) await start();
-      });
-      void startTask.catch((error) => {
-        if (!stopped) status.set("blocked", {
-          failure: { code: "START_FAILED", message: String(error) },
-          fidelity: "unavailable", recoveryOutcome: "blocked",
-        });
-      });
-      if (host.ui.statusBarItem) {
-        const locale = host.locale?.() ?? "en";
-        const label = locale.startsWith("ko") ? config.label?.ko : config.label?.en;
-        let cwdItem: { dispose(): void } | undefined;
-        const placeCwd = (cwd?: string) => {
-          cwdItem?.dispose();
-          const item = host.ui.statusBarItem?.({ id: `cwd:${pane}`, paneId: pane, label: cwd ?? "~", title: cwd, side: "left" });
-          cwdItem = item;
-        };
-        placeCwd(host.terminal?.getCwd?.(pane));
-        const cwd = host.terminal?.onCwd?.(pane, placeCwd);
-        if (cwd) viewDisposables.push(cwd);
-        viewDisposables.push({ dispose: () => cwdItem?.dispose() });
-        if (label) {
-          const kind = host.ui.statusBarItem({ id: `kind:${pane}`, paneId: pane, label });
-          viewDisposables.push(kind);
-        }
-      }
+      views.set(viewId, { viewId, container, set, workbench });
     },
     unmount(container: HTMLElement) {
-      const found = [...screens.entries()].find(([, value]) => value.presenter.root === container);
-      if (!found) return;
-      void found[1].stop();
-      screens.delete(found[0]);
+      const view = viewOf(container);
+      if (view) disposeView(view);
     },
     prepareFocusTransfer(container: HTMLElement) {
-      const found = [...screens.values()].find((screen) => screen.presenter.root === container);
-      found?.presenter.prepareFocusTransfer?.();
+      viewOf(container)?.set.focused()?.presenter.prepareFocusTransfer?.();
     },
     focus(container: HTMLElement, _context: ViewContext, request: { signal: AbortSignal }) {
       if (request.signal.aborted) return;
-      const found = [...screens.values()].find((screen) => screen.presenter.root === container);
-      found?.presenter.focus();
+      viewOf(container)?.set.focused()?.presenter.focus();
+    },
+    closeIntent(container: HTMLElement): "handled" | "pass" {
+      return viewOf(container)?.workbench.closeIntent() ?? "pass";
     },
   };
-  subscriptions.push(host.ui.registerView("content", view));
+  subscriptions.push(host.ui.registerView("content", provider));
 
-  const closedStatus = (): TerminalPluginPublicStatus => ({
-      pluginId: config.pluginId, engineId: engineSelection().engineId,
-      rendererId: config.renderer?.rendererId ?? `${config.engineId}-frame`,
-      rendererProfile: config.renderer?.rendererProfile ?? "web",
-      phase: "closed", recoveryOutcome: "blocked", fidelity: "unavailable",
-      failure: null, hostPixels: { width: 0, height: 0 }, requested: null, pty: null,
-      recovery: null, rendered: null, operation: "closed",
-      presentation: closedTerminalPresentation(
-        config.renderer?.delivery === "bytes" ? "bytes" : "frame",
-        readTerminalTheme(document.documentElement),
-      ),
+  const closedStatus = (): TerminalPluginViewStatus => ({
+    pluginId: config.pluginId, engineId: engineSelection().engineId,
+    rendererId: config.renderer?.rendererId ?? `${config.engineId}-frame`,
+    rendererProfile: config.renderer?.rendererProfile ?? "web",
+    phase: "closed", recoveryOutcome: "blocked", fidelity: "unavailable",
+    failure: null, hostPixels: { width: 0, height: 0 }, requested: null, pty: null,
+    recovery: null, rendered: null, operation: "closed",
+    presentation: closedTerminalPresentation(
+      config.renderer?.delivery === "bytes" ? "bytes" : "frame",
+      readTerminalTheme(document.documentElement),
+    ),
+    view: null, pane: null, panes: [],
   });
-  register("status", { view: viewParam }, async (params, context) => {
-    const screen = target(params, context);
-    if (!screen) return closedStatus();
-    const rendered = screen.presenter.size();
+  const publicStatus = async ({ view, pane }: Target): Promise<TerminalPluginViewStatus> => {
+    const rendered = pane.presenter.size();
     return {
-      ...screen.status.current(),
+      ...pane.status.current(),
       ...terminalResizeStatus({
-        pane: screen.pane, session: screen.session,
-        hostPixels: { width: screen.presenter.root.clientWidth, height: screen.presenter.root.clientHeight },
-        requested: screen.requestedSize, rendered: rendered.cols > 0 && rendered.rows > 0 ? rendered : null,
-        renderedOutputSequence: screen.renderedOutputSequence,
-        operation: screen.presenter.root.dataset.terminalOperation ?? "unknown",
-        diagnostics: await diagnosticsOrEmpty(),
+        pane: pane.key, session: pane.session,
+        hostPixels: pane.hostPixels(),
+        requested: pane.requestedSize, rendered: rendered.cols > 0 && rendered.rows > 0 ? rendered : null,
+        renderedOutputSequence: pane.renderedOutputSequence,
+        operation: pane.root.dataset.terminalOperation ?? "unknown",
+        diagnostics: await diagnosticsOrEmpty(pane.binding),
       }),
+      view: view.viewId, pane: pane.key, panes: view.set.list().map(paneSummary),
     };
-  });
-  register("archive", { view: viewParam }, async (params, context) => {
-    const screen = target(params, context);
-    if (!screen) return { archived: false };
-    const response = await screen.binding.recoveryRequest({ op: "archive", pane: screen.pane });
+  };
+  const statusHandler = async (params: Record<string, unknown>, context: CommandContext) => {
+    const found = target(params, context);
+    return found ? publicStatus(found) : closedStatus();
+  };
+
+  register("status", scoped(), statusHandler);
+  register("archive", scoped(), async (params, context) => {
+    const found = target(params, context);
+    if (!found) return { archived: false };
+    const response = await found.pane.binding.recoveryRequest({ op: "archive", pane: found.pane.key });
     return response.ok === true ? { archived: true, ...(response.data as object) } : response;
   });
-  register("wait", {
+  register("wait", scoped({
     phase: {
       type: "string", required: true,
       enum: ["initializing", "preparing-recovery", "applying-snapshot", "attaching-live-stream", "live", "archived", "degraded-tail", "blocked", "closed"],
@@ -687,17 +300,19 @@ export function activateProviderTerminalPlugin(
     focusedInput: { type: "boolean", description: { en: "Focused input state", ko: "입력 포커스 상태" } },
     cursorVisible: { type: "boolean", description: { en: "Visible cursor state", ko: "커서 표시 상태" } },
     cursorActive: { type: "boolean", description: { en: "Active cursor state", ko: "활성 커서 상태" } },
-    view: viewParam,
-  }, async (params, context) => {
-    const screen = target(params, context);
-    if (!screen) return closedStatus();
+    idleMs: { type: "number", description: { en: "No output for this long", ko: "이 시간 동안 출력 없음" } },
+  }), async (params, context) => {
+    const found = target(params, context);
+    if (!found) return closedStatus();
+    const { pane } = found;
     const phase = String(params.phase) as TerminalPluginPublicStatus["phase"];
     const timeoutMs = typeof params.timeoutMs === "number" ? params.timeoutMs : 10000;
+    const startedAt = performance.now();
     const waited = await waitForTerminalConditions({
-      status: screen.status, phase,
+      status: pane.status, phase,
       contains: typeof params.contains === "string" && params.contains !== ""
         ? params.contains : undefined,
-      timeoutMs, waitForText: screen.presenter.waitForText,
+      timeoutMs, waitForText: pane.presenter.waitForText,
       presentation: {
         ...(typeof params.focusedInput === "boolean" ? { focusedInput: params.focusedInput } : {}),
         ...(typeof params.cursorVisible === "boolean" ? { cursorVisible: params.cursorVisible } : {}),
@@ -710,71 +325,161 @@ export function activateProviderTerminalPlugin(
         ...(typeof params.rows === "number" ? { rows: params.rows } : {}),
       },
       waitForSize: (condition, limit) => waitForTerminalSize(
-        screen.presenter.root, condition, limit, screen.presenter.size,
+        pane.root, condition, limit, pane.presenter.size,
       ),
     });
+    if (typeof params.idleMs === "number" && params.idleMs > 0) {
+      await pane.waitIdle(params.idleMs, Math.max(1, Math.ceil(timeoutMs - (performance.now() - startedAt))));
+    }
     return {
-      ...waited, ...screen.presenter.size(),
-      operation: screen.presenter.root.dataset.terminalOperation ?? "unknown",
+      ...waited, ...pane.presenter.size(),
+      operation: pane.root.dataset.terminalOperation ?? "unknown",
+      pane: pane.key,
     };
   });
-  register("read", {
+  register("read", scoped({
     lines: { type: "number", description: { en: "Trailing line count", ko: "마지막 줄 수" } },
-    view: viewParam,
-  }, (params, context) => ({
-    text: target(params, context)?.presenter.read(
+  }), (params, context) => ({
+    text: target(params, context)?.pane.presenter.read(
       typeof params.lines === "number" ? params.lines : undefined,
     ) ?? "",
   }));
-  register("send", {
+  register("send", scoped({
     data: { type: "string", required: true, description: { en: "Input data", ko: "입력 데이터" } },
-    view: viewParam,
-  }, (params, context) => {
-    const screen = target(params, context);
-    if (!screen?.writable || typeof params.data !== "string") {
-      return { sent: false };
-    }
-    void screen.binding.write(screen.session, params.data).then(() => {
-      screen.presentation.markPtyWrite();
-      screen.status.refresh();
-    });
+  }), (params, context) => {
+    const found = target(params, context);
+    if (!found?.pane.writable || typeof params.data !== "string") return { sent: false };
+    void found.pane.write(params.data).catch(() => {});
     return { sent: params.data.length };
   });
-  register("clear", { view: viewParam }, (params, context) => {
-    const screen = target(params, context);
-    if (!screen?.writable) return { cleared: false };
-    void screen.binding.write(screen.session, "\x0c");
+  register("clear", scoped(), (params, context) => {
+    const found = target(params, context);
+    if (!found?.pane.writable) return { cleared: false };
+    void found.pane.write("\x0c").catch(() => {});
     return { cleared: true };
   });
-  register("focus", { view: viewParam }, (params, context) => ({
-    focused: target(params, context)?.presenter.focus() ?? false,
-  }));
-  register("recovery-status", { view: viewParam }, async (params, context) => {
-    const screen = target(params, context);
-    if (!screen) return closedStatus();
-    const rendered = screen.presenter.size();
+  register("focus", scoped(), (params, context) => {
+    const found = target(params, context);
+    if (!found) return { focused: false };
+    found.view.workbench.focus(found.pane.key, false);
+    return { focused: found.pane.presenter.focus() };
+  });
+  register("recovery-status", scoped(), statusHandler);
+
+  register("split", scoped({
+    direction: { type: "string", required: true, enum: ["right", "down"], description: { en: "Split direction", ko: "분할 방향" } },
+    command: { type: "string", description: { en: "Command to run in the new pane", ko: "새 판에서 실행할 명령" } },
+  }), (params, context) => {
+    const found = target(params, context);
+    if (!found) return { view: null, pane: null, engineId: engineSelection().engineId };
+    found.view.workbench.focus(found.pane.key, false);
+    const opened = found.view.workbench.split(params.direction === "down" ? "down" : "right");
+    if (!opened) return { view: found.view.viewId, pane: null, engineId: found.pane.engineId };
+    const session = found.view.set.get(opened.key);
+    const command = typeof params.command === "string" ? params.command : "";
+    if (session && command) {
+      void session.status.wait(["live"], 10000).then(() => session.write(`${command}\r`)).catch(() => {});
+    }
+    return { view: found.view.viewId, pane: opened.key, engineId: opened.engineId };
+  });
+  register("pane.close", scoped(), (params, context) => {
+    const found = target(params, context);
+    return found ? found.view.workbench.close(found.pane.key) : { closed: false, focused: null };
+  });
+  register("pane.focus", scoped({
+    dir: { type: "string", enum: [...DIRECTIONS], description: { en: "Neighbor direction", ko: "이웃 방향" } },
+    cycle: { type: "number", enum: [1, -1], description: { en: "Cycle step", ko: "순환 단계" } },
+  }), (params, context) => {
+    const found = target(params, context);
+    if (!found) return { focused: null };
+    const { workbench } = found.view;
+    if (typeof params.pane === "string") workbench.focus(found.pane.key, true);
+    else if (isDirection(params.dir)) workbench.focusDirection(params.dir);
+    else if (params.cycle === 1 || params.cycle === -1) workbench.focusCycle(params.cycle);
+    else workbench.focus(found.pane.key, true);
+    return { focused: workbench.focused()?.key ?? null };
+  });
+  register("pane.list", { view: viewParam }, (params, context) => {
+    const view = viewFor(params, context);
+    if (!view) return { view: null, focused: null, maximized: null, broadcast: false, panes: [] };
     return {
-      ...screen.status.current(),
-      ...terminalResizeStatus({
-        pane: screen.pane, session: screen.session,
-        hostPixels: { width: screen.presenter.root.clientWidth, height: screen.presenter.root.clientHeight },
-        requested: screen.requestedSize, rendered: rendered.cols > 0 && rendered.rows > 0 ? rendered : null,
-        renderedOutputSequence: screen.renderedOutputSequence,
-        operation: screen.presenter.root.dataset.terminalOperation ?? "unknown",
-        diagnostics: await diagnosticsOrEmpty(),
-      }),
+      view: view.viewId, focused: view.workbench.focused()?.key ?? null,
+      maximized: view.workbench.maximized(), broadcast: view.workbench.isBroadcast(),
+      panes: view.set.list().map(paneSummary),
     };
   });
+  register("pane.resize", scoped({
+    side: { type: "string", required: true, enum: ["right", "bottom"], description: { en: "Edge to move", ko: "옮길 가장자리" } },
+    px: { type: "number", description: { en: "Pixels", ko: "픽셀" } },
+    cells: { type: "number", description: { en: "Cells", ko: "칸" } },
+  }), (params, context) => {
+    const found = target(params, context);
+    const side = params.side === "bottom" ? "bottom" : params.side === "right" ? "right" : null;
+    if (!found || !side) return { applied: false };
+    if (typeof params.px === "number") return { applied: found.view.workbench.resize(found.pane.key, side, params.px) };
+    if (typeof params.cells === "number") return { applied: found.view.workbench.resizeCells(found.pane.key, side, params.cells) };
+    return { applied: false };
+  });
+  register("pane.equalize", { view: viewParam }, (params, context) => ({
+    applied: viewFor(params, context)?.workbench.equalize() ?? false,
+  }));
+  register("pane.maximize", scoped(), (params, context) => {
+    const found = target(params, context);
+    if (!found) return { maximized: null };
+    const { workbench } = found.view;
+    return { maximized: workbench.maximize(workbench.maximized() === found.pane.key ? null : found.pane.key) };
+  });
+  register("pane.broadcast", {
+    view: viewParam,
+    on: { type: "boolean", required: true, description: { en: "Broadcast input to every pane", ko: "모든 판에 입력 전달" } },
+  }, (params, context) => ({
+    broadcast: viewFor(params, context)?.workbench.broadcast(params.on === true) ?? false,
+  }));
+  register("pane.title", scoped({
+    title: { type: ["string", "null"], required: true, description: { en: "Pane title, null clears", ko: "판 제목, null이면 지움" } },
+  }), (params, context) => {
+    const found = target(params, context);
+    if (!found) return { title: null };
+    found.view.workbench.setTitle(found.pane.key, typeof params.title === "string" ? params.title : null);
+    return { title: found.pane.title };
+  });
+  register("scroll", scoped({
+    lines: { type: "number", description: { en: "Lines into history (negative toward the bottom)", ko: "기록 방향 줄 수(음수는 아래)" } },
+    offset: { type: "number", description: { en: "Absolute offset from the bottom", ko: "아래에서부터의 절대 위치" } },
+    edge: { type: "string", enum: ["top", "bottom"], description: { en: "Jump to an edge", ko: "가장자리로 이동" } },
+  }), async (params, context) => {
+    const found = target(params, context);
+    if (!found) return { pane: null, offset: 0, historySize: 0 };
+    return found.pane.scroll({
+      ...(typeof params.lines === "number" ? { lines: params.lines } : {}),
+      ...(typeof params.offset === "number" ? { offset: params.offset } : {}),
+      ...(params.edge === "top" || params.edge === "bottom" ? { edge: params.edge } : {}),
+    });
+  });
+  register("selection", scoped(), (params, context) => {
+    const found = target(params, context);
+    return found ? { pane: found.pane.key, text: found.pane.presenter.selection?.() ?? "" } : { pane: null, text: "" };
+  });
+  register("input.compose", scoped({
+    updates: { type: "array", required: true, description: { en: "Composition updates in order", ko: "순서대로의 조합 갱신" } },
+    data: { type: "string", required: true, description: { en: "Committed text", ko: "확정 텍스트" } },
+  }), (params, context) => {
+    const found = target(params, context);
+    const updates = Array.isArray(params.updates) ? params.updates.filter((value): value is string => typeof value === "string") : [];
+    if (!found || typeof params.data !== "string") return { emitted: 0 };
+    return { emitted: found.pane.presenter.compose?.(updates, params.data) ?? 0 };
+  }, "inject");
+
   for (const extension of config.extensions ?? []) {
     if ((TERMINAL_PLUGIN_COMMANDS as readonly string[]).includes(extension.name)) {
       throw new Error(`terminal extension cannot replace standard command ${extension.name}`);
     }
     register(extension.name, extension.params, (params, context) => {
-      const screen = target(params, context);
-      return extension.handler(params, screen ? {
-        pane: screen.pane, presenter: screen.presenter,
-        writable: screen.writable,
-        send: (data) => { void screen.binding.write(screen.session, data); },
+      const found = target(params, context);
+      return extension.handler(params, found ? {
+        pane: found.pane.key, presenter: found.pane.presenter,
+        writable: found.pane.writable,
+        send: (data) => { void found.pane.write(data).catch(() => {}); },
       } : undefined);
     }, extension.danger);
   }

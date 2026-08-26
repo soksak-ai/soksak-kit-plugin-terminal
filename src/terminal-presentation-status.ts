@@ -5,6 +5,16 @@ import type {
 
 let nextMountSequence = 0;
 
+// Instance nodes are "<id>/<k>"; a bare pane keeps the bare id.
+export function terminalNodeId(node: string, suffix: string | null): string {
+  return suffix === null ? node : `${node}/${suffix}`;
+}
+
+export function terminalNode(root: ParentNode, node: string, suffix: string | null): HTMLElement | null {
+  return root.querySelector<HTMLElement>(`[data-node="${terminalNodeId(node, suffix)}"]`)
+    ?? (suffix === null ? null : root.querySelector<HTMLElement>(`[data-node="${node}"]`));
+}
+
 export interface TerminalPresentationStatusController {
   markReady(): void;
   markRendered(durationMs: number): void;
@@ -19,6 +29,7 @@ export function createTerminalPresentationStatus(
   delivery: TerminalPresentationStatus["delivery"],
   theme: () => TerminalPresentationTheme,
   now: () => number = Date.now,
+  nodeSuffix: string | null = null,
 ): TerminalPresentationStatusController {
   const mountedAtUnixMs = now();
   const mountSequence = ++nextMountSequence;
@@ -38,8 +49,8 @@ export function createTerminalPresentationStatus(
   let lastInputToPtyWriteMs: number | null = null;
 
   const current = (): TerminalPresentationStatus => {
-    const input = root.querySelector<HTMLElement>('[data-node="terminal-input"]');
-    const screen = root.querySelector<HTMLElement>('[data-node="terminal-screen"]');
+    const input = terminalNode(root, "terminal-input", nodeSuffix);
+    const screen = terminalNode(root, "terminal-screen", nodeSuffix);
     if (input && firstFocusableInputAtUnixMs === null) firstFocusableInputAtUnixMs = now();
     const cursorRow = screen?.dataset.cursorRow;
     const cursorColumn = screen?.dataset.cursorColumn;

@@ -1,0 +1,172 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createPaneSession } from "./pane-session";
+import type { ProviderFrameRun, ProviderFrameV2 } from "./provider-frame-presenter";
+import type { TerminalSessionBinding } from "./terminal-session-binding";
+
+for (const [name, value] of Object.entries({
+  fg: "#eeeeec", card: "#1e1e1e", acc: "#ffffff", fg3: "#555753",
+})) document.documentElement.style.setProperty(`--${name}`, value);
+
+const run = (text: string): ProviderFrameRun => ({ text, fg: "default", bg: "default", attrs: 0 });
+const frameOf = (rows: string[], full = true): ProviderFrameV2 => ({
+  v: 2, full, cols: 4, rows: rows.length, cursor: [0, 0], cursor_visible: false, alt_active: false,
+  lines: rows.map((text, row) => ({ row, runs: [run(text)] })).filter((line) => line.runs[0].text !== ""),
+});
+
+interface FrameReply { ok: boolean; code?: string; data?: Record<string, unknown>; message?: string }
+
+function fakeBinding(frames: () => FrameReply) {
+  let nextSession = 0;
+  const taken = new Map<number, number>();
+  const readers = new Map<number, (bytes: Uint8Array, throughSeq: number) => void>();
+  const recovery: Array<Record<string, unknown>> = [];
+  const detached: number[] = [];
+  const binding: TerminalSessionBinding = {
+    open: vi.fn(async () => ++nextSession),
+    write: vi.fn(async () => {}),
+    resize: vi.fn(async () => {}),
+    close: vi.fn(async () => {}),
+    detach: vi.fn(async (session: number) => { detached.push(session); }),
+    onData: (session, callback) => { readers.set(session, callback); return { dispose: () => readers.delete(session) }; },
+    paneAlive: vi.fn(async () => false),
+    recoveryRequest: vi.fn(async (request: Record<string, unknown>) => {
+      recovery.push(request);
+      switch (request.op) {
+        case "prepareSession": return { ok: true, code: "OK", data: { observerToken: "observer" } };
+        case "archived": return { ok: false, code: "NOT_FOUND", message: "none" };
+        case "frame": return { ...frames(), request } as Record<string, unknown>;
+        case "waitSize": return { ok: true, code: "OK", data: { cols: request.cols, rows: request.rows } };
+        default: return { ok: true, code: "OK", data: {} };
+      }
+    }),
+    diagnostics: async () => ({ pty: {}, recovery: {} }),
+    closeWindow: async () => {},
+  };
+  const emit = (session: number, bytes: Uint8Array) => {
+    const throughSeq = (taken.get(session) ?? 0) + bytes.length;
+    taken.set(session, throughSeq);
+    readers.get(session)?.(bytes, throughSeq);
+  };
+  return { binding, recovery, detached, emit };
+}
+
+const mounted: Array<{ stop(): Promise<void> }> = [];
+afterEach(async () => {
+  await Promise.all(mounted.splice(0).map((pane) => pane.stop()));
+});
+
+function mount(binding: TerminalSessionBinding, extra: Partial<Parameters<typeof createPaneSession>[0]> = {}) {
+  const root = document.createElement("div");
+  document.body.append(root);
+  const observed: Uint8Array[] = [];
+  const pane = createPaneSession({
+    key: "tab-a.2", viewId: "tab-a", engineId: "vt100", binding, root, nodeSuffix: "2",
+    config: { pluginId: "plugin", engineId: "vt100" },
+    observe: (bytes) => observed.push(bytes), publish: () => {},
+    ...extra,
+  });
+  mounted.push(pane);
+  return { pane, root, observed };
+}
+
+describe("pane session", () => {
+  it("requests frames for its own subscriber after the exact sequence and applies full then delta frames", async () => {
+    let served = 0;
+    const { binding, recovery, emit } = fakeBinding(() => {
+      served += 1;
+      const request = recovery.at(-1)!;
+      return { ok: true, data: { outputSequence: Number(request.afterSequence ?? 0), frame: served === 1 ? frameOf(["ab", "cd"]) : frameOf(["", "xy"], false) } };
+    });
+    const { pane, root, observed } = mount(binding);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    emit(1, new Uint8Array([1, 2, 3]));
+    await vi.waitFor(() => expect(pane.presenter.read()).toBe("ab\ncd"));
+    expect(recovery.find((request) => request.op === "frame")).toMatchObject({
+      pane: "tab-a.2", subscriber: "tab-a.2#1", afterSequence: 3, offset: 0, timeoutMs: 2000,
+    });
+    emit(1, new Uint8Array([4]));
+    await vi.waitFor(() => expect(pane.presenter.read()).toBe("ab\nxy"));
+    expect(root.querySelector('[data-node="terminal-screen/2"]')).not.toBeNull();
+    expect(observed.map((bytes) => [...bytes])).toEqual([[1, 2, 3], [4]]);
+    expect(pane.renderedOutputSequence).toBe(4);
+  });
+
+  it("treats a timed-out frame poll as no frame and re-arms only while output is ahead", async () => {
+    let served = 0;
+    const { binding, recovery, emit } = fakeBinding(() => {
+      served += 1;
+      if (served === 1) return { ok: false, code: "TIMEOUT", message: "no output" };
+      return { ok: true, data: { outputSequence: 2, frame: frameOf(["ok"]) } };
+    });
+    const { pane } = mount(binding);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    emit(1, new Uint8Array([1, 2]));
+    await vi.waitFor(() => expect(pane.presenter.read()).toBe("ok"));
+    expect(recovery.filter((request) => request.op === "frame")).toHaveLength(2);
+    expect(pane.status.current()).toMatchObject({ phase: "live", failure: null });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(recovery.filter((request) => request.op === "frame")).toHaveLength(2);
+  });
+
+  it("scrolls by lines, offset and edge, clamps to the last history size and keeps the reply's offset", async () => {
+    const { binding, recovery, emit } = fakeBinding(() => {
+      const request = recovery.at(-1)!;
+      const asked = Number(request.offset ?? 0);
+      return { ok: true, data: { outputSequence: Number(request.afterSequence ?? 1), offset: Math.min(asked, 40), historySize: 100, frame: frameOf(["ab"]) } };
+    });
+    const { pane } = mount(binding);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    emit(1, new Uint8Array([1]));
+    await vi.waitFor(() => expect(pane.historySize).toBe(100));
+    await expect(pane.scroll({ lines: 10 })).resolves.toEqual({ pane: "tab-a.2", offset: 10, historySize: 100 });
+    const forced = recovery.filter((request) => request.op === "frame").at(-1)!;
+    expect(forced).toMatchObject({ offset: 10 });
+    expect(forced).not.toHaveProperty("afterSequence");
+    await expect(pane.scroll({ offset: 500 })).resolves.toMatchObject({ offset: 40 });
+    await expect(pane.scroll({ edge: "top" })).resolves.toMatchObject({ offset: 40 });
+    await expect(pane.scroll({ edge: "bottom" })).resolves.toMatchObject({ offset: 0 });
+    emit(1, new Uint8Array([2]));
+    await vi.waitFor(() => expect(pane.renderedOutputSequence).toBe(2));
+    expect(recovery.filter((request) => request.op === "frame").at(-1)).toMatchObject({ offset: 0, afterSequence: 2 });
+  });
+
+  it("owns one suffixed restore-status notice per pane", async () => {
+    const { binding } = fakeBinding(() => ({ ok: true, data: {} }));
+    (binding.recoveryRequest as ReturnType<typeof vi.fn>).mockImplementation(async (request: Record<string, unknown>) => {
+      if (request.op === "archived") return { ok: false, code: "CHECKPOINT_CORRUPT", message: "missing cursor" };
+      if (request.op === "prepareSession") return { ok: true, code: "OK", data: { observerToken: "observer" } };
+      return { ok: true, code: "OK", data: {} };
+    });
+    const { pane, root } = mount(binding);
+    const notice = root.querySelector<HTMLElement>('[data-node="terminal-restore-status/2"]')!;
+    expect(notice).not.toBeNull();
+    expect(root.querySelector('[data-node="terminal-restore-status"]')).toBeNull();
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    expect(notice.hidden).toBe(false);
+    expect(notice.textContent).toContain("CHECKPOINT_REJECTED");
+    expect(notice.style.pointerEvents).toBe("none");
+  });
+
+  it("tracks the last output time, resolves an idle wait, and keeps the last cwd report", async () => {
+    const { binding, emit } = fakeBinding(() => ({ ok: true, data: { outputSequence: 1, frame: frameOf(["a"]) } }));
+    const { pane } = mount(binding, { cwd: "/start" });
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    expect(pane.lastOutputAtUnixMs).toBeNull();
+    expect(pane.cwd()).toBe("/start");
+    emit(1, new TextEncoder().encode("\x1b]7;file://host/work/one\x07"));
+    emit(1, new TextEncoder().encode("\x1b]7;file://host/work/two\x07 partial \x1b]7;file://host/x"));
+    expect(pane.lastOutputAtUnixMs).not.toBeNull();
+    expect(new TextDecoder().decode(pane.lastCwdReport()!)).toBe("\x1b]7;file://host/work/two\x07");
+    expect(pane.cwd()).toBe("/work/two");
+    let settled = false;
+    const idle = pane.waitIdle(60, 1000).then(() => { settled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    emit(1, new Uint8Array([1]));
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(settled).toBe(false);
+    await idle;
+    expect(settled).toBe(true);
+    await expect(pane.waitIdle(1000, 20)).rejects.toThrow("idle wait timed out");
+  });
+});

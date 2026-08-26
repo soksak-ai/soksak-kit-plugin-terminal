@@ -67,4 +67,21 @@ describe("terminal presentation status", () => {
       lastFocusedAtUnixMs: 207,
     });
   });
+  it("reads the suffixed instance nodes of one pane", () => {
+    const root = document.createElement("div");
+    const screen = document.createElement("div");
+    screen.dataset.node = "terminal-screen/2";
+    screen.dataset.cursorVisible = "true";
+    screen.dataset.cursorRow = "4";
+    screen.dataset.cursorColumn = "1";
+    const input = document.createElement("textarea");
+    input.dataset.node = "terminal-input/2";
+    root.append(screen, input);
+    document.body.append(root);
+    input.focus();
+    const status = createTerminalPresentationStatus(root, "frame", () => theme, () => 100, "2");
+    expect(status.current()).toMatchObject({ focusedInput: true, cursorVisible: true, cursorRow: 4, cursorColumn: 1 });
+    expect(createTerminalPresentationStatus(root, "frame", () => theme, () => 100).current())
+      .toMatchObject({ focusedInput: false, cursorVisible: false, cursorRow: null });
+  });
 });

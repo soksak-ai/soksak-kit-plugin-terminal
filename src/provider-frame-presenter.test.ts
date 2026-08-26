@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
-import { createProviderFramePresenter } from "./provider-frame-presenter";
+import { createProviderFramePresenter, type ProviderFrameRun, type ProviderFrameV2 } from "./provider-frame-presenter";
+
+const run = (text: string, extra: Partial<ProviderFrameRun> = {}): ProviderFrameRun =>
+  ({ text, fg: "default", bg: "default", attrs: 0, ...extra });
+const runFrame = (rows: Array<[number, ProviderFrameRun[]]>, extra: Partial<ProviderFrameV2> = {}): ProviderFrameV2 => ({
+  v: 2, full: true, cols: 4, rows: 2, cursor: [0, 0], cursor_visible: false, alt_active: false,
+  lines: rows.map(([row, runs]) => ({ row, runs })), ...extra,
+});
 
 describe("provider frame presenter", () => {
   it("publishes operable nodes, accessible text, cursor state, and input", () => {
@@ -100,14 +107,78 @@ describe("provider frame presenter", () => {
     await expect(found).resolves.toContain("ready");
   });
 
-  it("measures the requested grid independently of the last rendered frame", () => {
+  it("measures the requested grid from the probed cell box, independently of the last frame", () => {
     const root = document.createElement("div");
     Object.defineProperty(root, "clientWidth", { value: 432 });
     Object.defineProperty(root, "clientHeight", { value: 384 });
-    const presenter = createProviderFramePresenter(root, vi.fn());
+    const presenter = createProviderFramePresenter(root, vi.fn(), { probe: () => ({ width: 8 * 32, height: 16 }) });
     presenter.render({ cols: 91, rows: 29, cursor: [0, 0], cursor_visible: true, alt_active: false, lines: [] });
     expect(presenter.size()).toEqual({ cols: 91, rows: 29 });
+    expect(presenter.metrics()).toEqual({ cellWidth: 8, cellHeight: 16 });
     expect(presenter.measure()).toEqual({ cols: 54, rows: 24 });
+    // No layout engine: the probe box is empty and the grid is unknown rather than invented.
+    const unmeasured = createProviderFramePresenter(document.createElement("div"), vi.fn());
+    expect(unmeasured.metrics()).toBeNull();
+    expect(unmeasured.measure()).toEqual({ cols: 0, rows: 0 });
+  });
+
+  it("renders run frames with wide glyphs, links and the cursor split out of a run", () => {
+    const presenter = createProviderFramePresenter(document.createElement("div"), vi.fn());
+    presenter.render(runFrame([
+      [0, [run("ab", { fg: "palette:1" }), run("가", { wide: true }), run("c", { link: "https://example.test" })]],
+      [1, [run("x")]],
+    ], { cols: 6, cursor: [0, 1], cursor_visible: true }));
+    expect(presenter.read()).toBe("ab가c\nx");
+    const spans = Array.from(presenter.screen.children[0].querySelectorAll<HTMLElement>("span"));
+    expect(spans.map((span) => span.textContent)).toEqual(["a", "b", "가", "c"]);
+    expect(spans[1].dataset.cursor).toBe("true");
+    expect(spans[1].style.color).toBe("rgb(204, 0, 0)");
+    expect(spans[2].dataset.wide).toBe("true");
+    expect(spans[3].dataset.link).toBe("https://example.test");
+    expect(spans[3].style.textDecoration).toContain("underline");
+    presenter.render(runFrame([[0, [run("ab"), run("가", { wide: true }), run("c")]], [1, [run("x")]]], { cols: 6, cursor: [0, 2], cursor_visible: true }));
+    expect(presenter.screen.querySelector('[data-cursor="true"]')?.textContent).toBe("가");
+  });
+
+  it("replaces only the listed rows of a delta frame and keeps the other row nodes", () => {
+    const presenter = createProviderFramePresenter(document.createElement("div"), vi.fn());
+    presenter.render(runFrame([[0, [run("ab")]], [1, [run("cd")]]], { cursor: [1, 0] }));
+    const first = presenter.screen.children[0] as HTMLElement;
+    const firstSpan = first.firstElementChild as HTMLElement;
+    firstSpan.textContent = "zz";
+    presenter.render(runFrame([[1, [run("xy")]]], { full: false, cursor: [1, 0] }));
+    expect(presenter.read()).toBe("ab\nxy");
+    expect(presenter.screen.children[0]).toBe(first);
+    expect(first.firstElementChild).toBe(firstSpan);
+    expect(firstSpan.textContent).toBe("zz");
+    expect(presenter.screen.children[1].textContent).toBe("xy");
+    presenter.render(runFrame([[0, [run("ab")]], [1, [run("cd")]]], { full: true, cursor: [1, 0] }));
+    expect(firstSpan.textContent).toBe("ab");
+    presenter.render(runFrame([[2, [run("new")]]], { full: false, rows: 3, cursor: [2, 0] }));
+    expect(presenter.read()).toBe("ab\ncd\nnew");
+    expect(presenter.screen.children).toHaveLength(3);
+  });
+
+  it("suffixes every public node with the pane index and reports selection and composition", () => {
+    const root = document.createElement("div"); document.body.append(root);
+    const send = vi.fn();
+    const presenter = createProviderFramePresenter(root, send, { nodeSuffix: "3" });
+    expect(root.dataset.node).toBe("terminal-root/3");
+    expect(presenter.screen.dataset.node).toBe("terminal-screen/3");
+    expect(presenter.input.dataset.node).toBe("terminal-input/3");
+    presenter.render(runFrame([[0, [run("hello")]]], { rows: 1, cols: 5 }));
+    const range = document.createRange();
+    range.selectNodeContents(presenter.screen.children[0]);
+    const selected = document.getSelection()!;
+    selected.removeAllRanges(); selected.addRange(range);
+    expect(presenter.selection()).toBe("hello");
+    selected.removeAllRanges();
+    expect(presenter.selection()).toBe("");
+    const seen: string[] = [];
+    presenter.input.addEventListener("compositionupdate", (event) => seen.push((event as CompositionEvent).data));
+    expect(presenter.compose(["ㅎ", "하", "한"], "한")).toBe(6);
+    expect(seen).toEqual(["ㅎ", "하", "한"]);
+    expect(send).toHaveBeenCalledWith("한");
   });
 });
 
