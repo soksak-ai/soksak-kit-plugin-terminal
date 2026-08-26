@@ -602,7 +602,7 @@ describe("provider-backed terminal plugin", () => {
       stream: vi.fn(),
       close: vi.fn(async () => { order.push("recovery.handle.close"); }),
     };
-    const subscriptions: Array<{ dispose(): void | Promise<void> }> = [];
+    const subscriptions: Array<{ dispose(): void }> = [];
     const host: ProviderTerminalPluginHost = {
       windowLabel: () => "window",
       sidecar: { open: async (name) => name === "pty" ? pty : recovery },

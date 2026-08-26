@@ -207,11 +207,11 @@ export function activateProviderTerminalPlugin(
     return view && pane ? { view, pane } : undefined;
   };
   const viewOf = (container: HTMLElement) => [...views.values()].find((view) => view.container === container);
-  const disposeView = (view: MountedView) => {
+  const disposeView = async (view: MountedView) => {
     views.delete(view.viewId);
     view.stopWatchingPresentation?.();
     view.workbench.dispose();
-    void view.set.dispose();
+    await view.set.dispose();
   };
 
   const provider = {
@@ -219,7 +219,7 @@ export function activateProviderTerminalPlugin(
       const viewId = context.viewId ?? "";
       if (!viewId) throw new Error("terminal view requires a view id");
       const existing = views.get(viewId);
-      if (existing) disposeView(existing);
+      if (existing) void disposeView(existing);
       const saved = parseRestoreState(context.restore?.state);
       const set = createPaneSet(host, {
         viewId, container, context,
@@ -246,7 +246,7 @@ export function activateProviderTerminalPlugin(
     },
     unmount(container: HTMLElement) {
       const view = viewOf(container);
-      if (view) disposeView(view);
+      if (view) void disposeView(view);
     },
     prepareFocusTransfer(container: HTMLElement) {
       viewOf(container)?.set.focused()?.presenter.prepareFocusTransfer?.();
@@ -499,4 +499,11 @@ export function activateProviderTerminalPlugin(
       } : undefined);
     }, extension.danger);
   }
+  subscriptions.push({
+    async dispose() {
+      await Promise.all([...views.values()].map((view) => disposeView(view)));
+      await Promise.all([...bindings.values()].map((binding) => binding.dispose()));
+      bindings.clear();
+    },
+  });
 }

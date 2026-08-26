@@ -42,6 +42,7 @@ function fakeBinding() {
     }),
     diagnostics: async () => ({ pty: {}, recovery: {} }),
     closeWindow: async () => {},
+    dispose: async () => {},
   };
   const emit = (session: number, bytes: Uint8Array) => {
     const throughSeq = (taken.get(session) ?? 0) + bytes.length;

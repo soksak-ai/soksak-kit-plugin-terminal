@@ -40,6 +40,7 @@ export interface TerminalSessionBinding {
   recoveryRequest(request: Record<string, unknown>): Promise<Record<string, unknown>>;
   diagnostics(): Promise<{ pty: Record<string, unknown>; recovery: Record<string, unknown> }>;
   closeWindow(windowLabel: string): Promise<void>;
+  dispose(): Promise<void>;
 }
 
 export interface TerminalSessionBindingOptions {
@@ -58,6 +59,8 @@ export function createTerminalSessionBinding(
   host: TerminalSessionHost,
   options: TerminalSessionBindingOptions,
 ): TerminalSessionBinding {
+  let disposed = false;
+  let disposing: Promise<void> | null = null;
   let sequence = 0;
   const request = (command: string, value: Record<string, unknown>) => ({
     id: `terminal-${++sequence}`, command, args: { request: value },
@@ -73,9 +76,17 @@ export function createTerminalSessionBinding(
   let ptyChannel: TerminalSidecarChannel | null = null;
   let ptyPromise: Promise<TerminalSidecarChannel> | null = null;
   const pty = () => {
+    if (disposed) return Promise.reject(new Error("terminal session binding is disposed"));
     if (!ptyPromise) {
       ptyPromise = host.sidecar.open(options.ptySidecarId)
-        .then((channel) => { ptyChannel = channel; return channel; })
+        .then(async (channel) => {
+          if (disposed) {
+            await channel.close?.();
+            throw new Error("terminal session binding is disposed");
+          }
+          ptyChannel = channel;
+          return channel;
+        })
         .catch((error) => { ptyPromise = null; throw error; });
     }
     return ptyPromise;
@@ -83,12 +94,20 @@ export function createTerminalSessionBinding(
   let recoveryChannel: TerminalSidecarChannel | null = null;
   let recoveryPromise: Promise<TerminalSidecarChannel> | null = null;
   const recovery = () => {
+    if (disposed) return Promise.reject(new Error("terminal session binding is disposed"));
     if (!recoveryPromise) {
       const key = options.checkpointKey ?? "terminal-checkpoint-key-v1";
       options.onOperation?.("opening-recovery");
       recoveryPromise = host.sidecar.open(options.terminalSidecarId, {
         generatedSecretEnv: { [KEY_ENV]: { key, bytes: 32 } },
-      }).then((channel) => { recoveryChannel = channel; return channel; })
+      }).then(async (channel) => {
+        if (disposed) {
+          await channel.close?.();
+          throw new Error("terminal session binding is disposed");
+        }
+        recoveryChannel = channel;
+        return channel;
+      })
         .catch((error) => { recoveryPromise = null; throw error; });
     }
     return recoveryPromise;
@@ -273,6 +292,36 @@ export function createTerminalSessionBinding(
       return { pty: ptyStatus, recovery: recoveryStatus };
     },
     async closeWindow(windowLabel) { const channel = await pty(); answer(await sendPty(channel, request("pty.closeWindow", { windowLabel }))); },
+    dispose() {
+      if (disposing) return disposing;
+      disposed = true;
+      disposing = (async () => {
+        const closingStreams = [...streams.values()];
+        for (const stream of closingStreams) stream.dispose();
+        await Promise.all(closingStreams.map((stream) => stream.settled));
+        const channels = new Set<TerminalSidecarChannel>();
+        if (ptyChannel) channels.add(ptyChannel);
+        if (recoveryChannel) channels.add(recoveryChannel);
+        const pendingChannels = [ptyPromise, recoveryPromise].filter(
+          (pending): pending is Promise<TerminalSidecarChannel> => pending !== null,
+        );
+        for (const result of await Promise.allSettled(pendingChannels)) {
+          if (result.status === "fulfilled") channels.add(result.value);
+        }
+        ptyChannel = null;
+        ptyPromise = null;
+        recoveryChannel = null;
+        recoveryPromise = null;
+        await Promise.all([...channels].map((channel) => channel.close?.()));
+        streams.clear();
+        readers.clear();
+        enders.clear();
+        pending.clear();
+        taken.clear();
+        acknowledgements.clear();
+      })();
+      return disposing;
+    },
   };
 
   async function release(session: number): Promise<void> {
