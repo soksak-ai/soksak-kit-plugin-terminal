@@ -235,4 +235,27 @@ describe("workbench", () => {
     expect(two).toHaveBeenCalledTimes(1);
     expect(panes.get("tab-a.1")!.hostPixels!()).toEqual({ width: 498, height: 400 });
   });
+
+  // What the commands answer, the nodes state. A caller that drives the view through the exposed
+  // DOM reads the same split state the commands report.
+  it("states the split state on the root and on every pane node", () => {
+    const { root, workbench, node } = fixture();
+    expect(root.dataset.paneCount).toBe("1");
+    expect(root.dataset.focusedPane).toBe("tab-a.1");
+    expect(root.dataset.maximized).toBe("");
+    expect(root.dataset.broadcast).toBe("false");
+
+    const second = workbench.split("right")!.key;
+    expect(root.dataset.paneCount).toBe("2");
+    expect(root.dataset.focusedPane).toBe(second);
+    expect(node("pane/2")!.dataset.maximized).toBe("false");
+
+    workbench.toggleMaximize();
+    expect(root.dataset.maximized).toBe(second);
+    expect(node("pane/2")!.dataset.maximized).toBe("true");
+    expect(node("pane/1")!.dataset.maximized).toBe("false");
+
+    workbench.broadcast(true);
+    expect(root.dataset.broadcast).toBe("true");
+  });
 });

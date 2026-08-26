@@ -141,12 +141,22 @@ export function createWorkbench(root: HTMLElement, paneSet: WorkbenchPaneSet, op
   });
   paneSet.bindLayout(() => ({ ...restoreState() }));
   const focusedPane = () => (focusedKey === null ? undefined : mounted.get(focusedKey)?.pane);
+  // The nodes state what the commands answer: how many panes there are, which one has focus, which
+  // one is maximized, and whether input reaches them all.
+  const publishState = () => {
+    root.dataset.paneCount = String(mounted.size);
+    root.dataset.focusedPane = focusedKey ?? "";
+    root.dataset.maximized = maximizedKey ?? "";
+    root.dataset.broadcast = String(broadcastOn);
+    for (const [key, item] of mounted) item.wrapper.dataset.maximized = String(key === maximizedKey);
+  };
   const applyFocusStyle = () => {
     for (const [key, item] of mounted) {
       const focused = key === focusedKey;
       item.wrapper.dataset.focused = String(focused);
       item.wrapper.style.opacity = focused ? "1" : "0.7";
     }
+    publishState();
   };
 
   const createGutter = (id: string): HTMLElement => {
@@ -236,6 +246,7 @@ export function createWorkbench(root: HTMLElement, paneSet: WorkbenchPaneSet, op
       }
     }
     reconcileGutters(gutters);
+    publishState();
     if (!notify) return;
     for (const { key, rect } of currentPanes) {
       const item = mounted.get(key);
@@ -464,6 +475,7 @@ export function createWorkbench(root: HTMLElement, paneSet: WorkbenchPaneSet, op
     maximized: () => maximizedKey,
     broadcast(on) {
       broadcastOn = on;
+      publishState();
       persist();
       return broadcastOn;
     },
