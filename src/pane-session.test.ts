@@ -314,3 +314,28 @@ describe("a pane with no session", () => {
     await vi.waitFor(() => expect(fits.length).toBeGreaterThan(0));
   });
 });
+
+// A pane nobody can see is a pane nothing has to be painted for. It keeps its session and its
+// output, and it asks for a frame again when it is shown.
+describe("a pane that is not shown", () => {
+  it("stops asking for frames until it is shown again", async () => {
+    let served = 0;
+    const { binding, recovery, emit } = fakeBinding(() => {
+      served += 1;
+      return { ok: true, data: { outputSequence: served + 1, ...frameOf(["ab"]) } };
+    });
+    const { pane } = mount(binding);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    emit(1, new Uint8Array([1, 2, 3]));
+    await vi.waitFor(() => expect(recovery.filter((r) => r.op === "frame").length).toBeGreaterThan(0));
+
+    pane.setShown(false);
+    const asked = recovery.filter((r) => r.op === "frame").length;
+    emit(1, new Uint8Array([4, 5, 6]));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(recovery.filter((r) => r.op === "frame").length).toBe(asked);
+
+    pane.setShown(true);
+    await vi.waitFor(() => expect(recovery.filter((r) => r.op === "frame").length).toBeGreaterThan(asked));
+  });
+});

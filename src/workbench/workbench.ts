@@ -23,6 +23,8 @@ export interface WorkbenchPane {
     metrics?(): { cellWidth: number; cellHeight: number } | null;
   };
   requestResize(): void;
+  // A pane the layout hides is not painted for; it is told when that changes.
+  setShown?(shown: boolean): void;
   sendInput(text: string): void;
   onInput(listener: (text: string) => void): { dispose(): void };
   scroll(request: { offset?: number; lines?: number; edge?: "top" | "bottom" }): Promise<unknown>;
@@ -231,7 +233,10 @@ export function createWorkbench(root: HTMLElement, paneSet: WorkbenchPaneSet, op
     if (maximizedKey !== null && mounted.has(maximizedKey)) {
       currentPanes = [{ key: maximizedKey, rect: area }];
       currentSplits = [];
-      for (const [key, item] of mounted) item.wrapper.hidden = key !== maximizedKey;
+      for (const [key, item] of mounted) {
+        item.wrapper.hidden = key !== maximizedKey;
+        item.pane.setShown?.(!item.wrapper.hidden);
+      }
       rects.set(maximizedKey, area);
       place(mounted.get(maximizedKey)!.wrapper, area);
     } else {
@@ -239,7 +244,10 @@ export function createWorkbench(root: HTMLElement, paneSet: WorkbenchPaneSet, op
       currentPanes = computed.panes;
       currentSplits = computed.splits;
       gutters = computed.gutters;
-      for (const item of mounted.values()) item.wrapper.hidden = false;
+      for (const item of mounted.values()) {
+        item.wrapper.hidden = false;
+        item.pane.setShown?.(true);
+      }
       for (const { key, rect } of computed.panes) {
         const item = mounted.get(key);
         if (!item) continue;

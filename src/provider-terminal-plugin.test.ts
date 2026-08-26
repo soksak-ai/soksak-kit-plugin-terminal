@@ -807,3 +807,40 @@ describe("an extension command", () => {
     expect(seen).toEqual([{ view: "tab-a", pane: "tab-a.1" }]);
   });
 });
+
+// A view the host is not showing is a view nothing has to be painted for.
+describe("a view that is not shown", () => {
+  it("stops its panes asking for frames until the host shows it again", async () => {
+    const { channel, requests } = fakeSidecars();
+    let view: View | undefined;
+    const host: ProviderTerminalPluginHost = {
+      windowLabel: () => "window", secrets: { generate: async () => ({ created: true }) },
+      sidecar: { open: async () => channel as never },
+      ui: { registerView: (_id, provider) => { view = provider; return { dispose() {} }; } },
+      commands: { register: () => ({ dispose() {} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
+    };
+    activateProviderTerminalPlugin(host, [], {
+      pluginId: "plugin", engineId: "vt100", ptySidecarId: "soksak-sidecar-pty",
+      terminalSidecarId: "soksak-sidecar-terminal-vt100", programId: "terminal-vt100",
+    });
+    let visible = true;
+    const listeners: Array<(p: { visible: boolean }) => void> = [];
+    const root = document.createElement("div"); document.body.append(root);
+    view!.mount(root, {
+      viewId: "tab-a",
+      presentation: () => ({ visible }),
+      onPresentationChange: (listener: (p: { visible: boolean }) => void) => { listeners.push(listener); return () => {}; },
+    } as never);
+    await vi.waitFor(() => expect(root.dataset.terminalPhase).toBe("live"));
+
+    visible = false;
+    for (const listener of listeners) listener({ visible: false });
+    const asked = requests.filter((entry) => entry.command === "terminal.frame").length;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(requests.filter((entry) => entry.command === "terminal.frame").length).toBe(asked);
+
+    visible = true;
+    for (const listener of listeners) listener({ visible: true });
+    await vi.waitFor(() => expect(requests.filter((entry) => entry.command === "terminal.frame").length).toBeGreaterThan(asked));
+  });
+});

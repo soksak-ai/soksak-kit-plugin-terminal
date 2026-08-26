@@ -259,4 +259,18 @@ describe("workbench", () => {
     workbench.broadcast(true);
     expect(root.dataset.broadcast).toBe("true");
   });
+
+  // A pane the layout hides is a pane nothing has to be painted for, and it is told so.
+  it("tells a hidden pane it is not shown, and tells it again when it is", () => {
+    const { workbench, panes } = fixture();
+    workbench.split("right");
+    // Splitting moves focus to the new pane, so maximizing hides the one it came from.
+    const hidden = panes.get("tab-a.1")!;
+    const shown: boolean[] = [];
+    (hidden as { setShown?: (value: boolean) => void }).setShown = (value: boolean) => { shown.push(value); };
+    workbench.toggleMaximize();
+    expect(shown.at(-1)).toBe(false);
+    workbench.toggleMaximize();
+    expect(shown.at(-1)).toBe(true);
+  });
 });

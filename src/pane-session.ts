@@ -103,6 +103,9 @@ export interface PaneSession {
   lastCwdReport(): Uint8Array | null;
   cwd(): string | null;
   requestResize(): void;
+  // A pane nobody can see is not painted: it keeps its session and its output and asks for a frame
+  // again when it is shown.
+  setShown(shown: boolean): void;
   // "detach" keeps the session for the pane to reattach to; "close" ends it with the pane.
   stop(intent?: "detach" | "close"): Promise<void>;
 }
@@ -310,8 +313,9 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     }, 0);
   };
   const outputAhead = () => requestedSequence > (renderedSequence ?? -1);
+  let shown = true;
   const scheduleRenderLatest = () => {
-    if (frameRequest !== null || renderingTask || stopped || (!frameForced && !outputAhead())) return;
+    if (frameRequest !== null || renderingTask || stopped || !shown || (!frameForced && !outputAhead())) return;
     frameRequest = setTimeout(() => {
       frameRequest = null;
       void renderLatest().catch(reportFrameFailure);
@@ -606,7 +610,12 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
         return input.cwd ?? null;
       }
     },
-    requestResize,
+setShown(next) {
+      if (shown === next) return;
+      shown = next;
+      if (shown) { frameForced = true; scheduleRenderLatest(); }
+    },
+        requestResize,
     stop(intent = "detach") {
       if (stopping) return stopping;
       stopped = true;

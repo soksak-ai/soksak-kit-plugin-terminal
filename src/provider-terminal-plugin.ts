@@ -24,6 +24,9 @@ export interface ViewContext extends PaneSetContext {
   viewId?: string | null;
   paneId?: string | null;
   restore?: { cwd: string | null; state: unknown } | null;
+  // What the host shows of this view. A view nobody can see is not painted for.
+  presentation?(): { visible: boolean };
+  onPresentationChange?(listener: (presentation: { visible: boolean }) => void): () => void;
 }
 
 export interface ProviderTerminalPluginHost extends PaneSetHost {
@@ -85,6 +88,7 @@ interface MountedView {
   container: HTMLElement;
   set: PaneSet;
   workbench: Workbench;
+  stopWatchingPresentation?: (() => void) | null;
 }
 interface Target { view: MountedView; pane: PaneSession }
 type CommandContext = { pane?: string } | undefined;
@@ -204,6 +208,7 @@ export function activateProviderTerminalPlugin(
   const viewOf = (container: HTMLElement) => [...views.values()].find((view) => view.container === container);
   const disposeView = (view: MountedView) => {
     views.delete(view.viewId);
+    view.stopWatchingPresentation?.();
     view.workbench.dispose();
     void view.set.dispose();
   };
@@ -227,7 +232,16 @@ export function activateProviderTerminalPlugin(
         viewId, restore: context.restore?.state, restoreCwd: context.restore?.cwd ?? null,
         layout: config.layout ?? "workbench", events: host.events,
       });
-      views.set(viewId, { viewId, container, set, workbench });
+      const shownEverywhere = (visible: boolean) => {
+        for (const pane of set.list()) pane.setShown(visible);
+      };
+      // A view the host is not showing is a view nothing has to be painted for. Its panes keep their
+      // sessions and their output, and they ask for a frame again when the view is shown.
+      const stopWatchingPresentation = context.onPresentationChange?.((presentation) => {
+        shownEverywhere(presentation.visible);
+      }) ?? null;
+      if (context.presentation) shownEverywhere(context.presentation().visible);
+      views.set(viewId, { viewId, container, set, workbench, stopWatchingPresentation });
     },
     unmount(container: HTMLElement) {
       const view = viewOf(container);
