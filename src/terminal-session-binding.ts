@@ -4,6 +4,7 @@ export interface TerminalSidecarChannel {
     request: Record<string, unknown>,
     handlers: { onBytes(data: Uint8Array): void; onEnd?(reason: string): void },
   ): Promise<{ answer: Record<string, unknown>; close: { dispose(): void; settled: Promise<void> } }>;
+  close?(): Promise<void>;
 }
 
 export interface TerminalSessionHost {
@@ -68,16 +69,49 @@ export function createTerminalSessionBinding(
     if (options.observe === undefined) host.terminal?.observe?.(paneId, bytes);
     else options.observe?.(paneId, bytes);
   };
+  let ptyChannel: TerminalSidecarChannel | null = null;
   let ptyPromise: Promise<TerminalSidecarChannel> | null = null;
-  const pty = () => (ptyPromise ??= host.sidecar.open(options.ptySidecarId));
+  const pty = () => {
+    if (!ptyPromise) {
+      ptyPromise = host.sidecar.open(options.ptySidecarId)
+        .then((channel) => { ptyChannel = channel; return channel; })
+        .catch((error) => { ptyPromise = null; throw error; });
+    }
+    return ptyPromise;
+  };
+  let recoveryChannel: TerminalSidecarChannel | null = null;
   let recoveryPromise: Promise<TerminalSidecarChannel> | null = null;
-  const recovery = () => (recoveryPromise ??= (async () => {
-    const key = options.checkpointKey ?? "terminal-checkpoint-key-v1";
-    options.onOperation?.("opening-recovery");
-    return host.sidecar.open(options.terminalSidecarId, {
-      generatedSecretEnv: { [KEY_ENV]: { key, bytes: 32 } },
-    });
-  })());
+  const recovery = () => {
+    if (!recoveryPromise) {
+      const key = options.checkpointKey ?? "terminal-checkpoint-key-v1";
+      options.onOperation?.("opening-recovery");
+      recoveryPromise = host.sidecar.open(options.terminalSidecarId, {
+        generatedSecretEnv: { [KEY_ENV]: { key, bytes: 32 } },
+      }).then((channel) => { recoveryChannel = channel; return channel; })
+        .catch((error) => { recoveryPromise = null; throw error; });
+    }
+    return recoveryPromise;
+  };
+  const invalidatePty = (channel: TerminalSidecarChannel) => {
+    if (ptyChannel !== channel) return;
+    ptyChannel = null;
+    ptyPromise = null;
+    void channel.close?.().catch(() => {});
+  };
+  const invalidateRecovery = (channel: TerminalSidecarChannel) => {
+    if (recoveryChannel !== channel) return;
+    recoveryChannel = null;
+    recoveryPromise = null;
+    void channel.close?.().catch(() => {});
+  };
+  const sendPty = async (channel: TerminalSidecarChannel, message: Record<string, unknown>) => {
+    try { return await channel.send(message); }
+    catch (error) { invalidatePty(channel); throw error; }
+  };
+  const sendRecovery = async (channel: TerminalSidecarChannel, message: Record<string, unknown>) => {
+    try { return await channel.send(message); }
+    catch (error) { invalidateRecovery(channel); throw error; }
+  };
   const streams = new Map<number, { dispose(): void; settled: Promise<void> }>();
   const readers = new Map<number, Set<(bytes: Uint8Array, throughSeq: number) => void>>();
   const pending = new Map<number, Array<{ bytes: Uint8Array; throughSeq: number }>>();
@@ -98,7 +132,7 @@ export function createTerminalSessionBinding(
     state.running = Promise.resolve().then(async () => {
       while (state.sent < state.latest) {
         const throughSeq = state.latest;
-        answer(await channel.send(request("pty.ack", { session, throughSeq })));
+        answer(await sendPty(channel, request("pty.ack", { session, throughSeq })));
         state.sent = throughSeq;
       }
     }).catch((error) => {
@@ -142,7 +176,7 @@ export function createTerminalSessionBinding(
     async open(paneId, cols, rows, replay, observerToken, openOptions) {
       const channel = await pty();
       const shell = await loginShell();
-      const opened = answer(await channel.send(request("pty.open", {
+      const opened = answer(await sendPty(channel, request("pty.open", {
         paneId, cols, rows, shell, windowLabel: host.windowLabel(),
         ...(observerToken ? { observerToken } : {}),
         ...(openOptions?.cwd ? { cwd: openOptions.cwd } : {}),
@@ -162,13 +196,19 @@ export function createTerminalSessionBinding(
         else pending.set(session, [...(pending.get(session) ?? []), { bytes, throughSeq }]);
         observe(paneId, bytes);
       };
-      const stream = await channel.stream(request(
-        leaseToken ? "pty.attachLease" : "pty.attach",
-        leaseToken ? { token: leaseToken } : { session },
-      ), { onBytes(bytes) {
-        if (!streamStarted) { beforeAnswer.push(bytes.slice()); return; }
-        deliver(bytes);
-      }});
+      let stream;
+      try {
+        stream = await channel.stream(request(
+          leaseToken ? "pty.attachLease" : "pty.attach",
+          leaseToken ? { token: leaseToken } : { session },
+        ), { onBytes(bytes) {
+          if (!streamStarted) { beforeAnswer.push(bytes.slice()); return; }
+          deliver(bytes);
+        }});
+      } catch (error) {
+        invalidatePty(channel);
+        throw error;
+      }
       const attached = answer(stream.answer);
       const startSeq = Number(attached.startSeq);
       if (!Number.isSafeInteger(startSeq) || startSeq < 0) { stream.close.dispose(); throw new Error("pty.attach returned invalid startSeq"); }
@@ -179,11 +219,12 @@ export function createTerminalSessionBinding(
       streams.set(session, stream.close);
       return session;
     },
-    async write(session, data) { answer(await (await pty()).send(request("pty.write", { session, dataB64: encode(data) }))); },
-    async resize(session, cols, rows) { answer(await (await pty()).send(request("pty.resize", { session, cols, rows }))); },
+    async write(session, data) { const channel = await pty(); answer(await sendPty(channel, request("pty.write", { session, dataB64: encode(data) }))); },
+    async resize(session, cols, rows) { const channel = await pty(); answer(await sendPty(channel, request("pty.resize", { session, cols, rows }))); },
     async close(session) {
       await release(session);
-      answer(await (await pty()).send(request("pty.close", { session })));
+      const channel = await pty();
+      answer(await sendPty(channel, request("pty.close", { session })));
     },
     async detach(session) { await release(session); },
     onData(session, callback) {
@@ -191,7 +232,7 @@ export function createTerminalSessionBinding(
       for (const item of pending.get(session) ?? []) callback(item.bytes, item.throughSeq); pending.delete(session);
       return { dispose: () => void readers.get(session)?.delete(callback) };
     },
-    async paneAlive(paneId) { return answer(await (await pty()).send(request("pty.pane", { paneId }))).held === true; },
+    async paneAlive(paneId) { const channel = await pty(); return answer(await sendPty(channel, request("pty.pane", { paneId }))).held === true; },
     async recoveryRequest(value) {
       const operation = typeof value.op === "string" ? value.op : "";
       const commands: Record<string, string> = {
@@ -204,13 +245,14 @@ export function createTerminalSessionBinding(
       const command = commands[operation];
       if (!command) throw new Error(`unknown terminal recovery operation ${operation}`);
       const { op: _op, ...payload } = value;
-      const response = await (await recovery()).send(request(command, { ...payload, window: host.windowLabel() }));
+      const channel = await recovery();
+      const response = await sendRecovery(channel, request(command, { ...payload, window: host.windowLabel() }));
       if (response.ok !== true) return { ok: false, code: (response.result as { code?: string })?.code ?? "FAILED", message: response.error ?? "recovery request failed" };
       return { ok: true, code: "OK", data: answer(response) };
     },
     async diagnostics() {
       const [ptyStatus, recoveryStatus] = await Promise.all([
-        (async () => answer(await (await pty()).send(request("pty.status", {}))))(),
+        (async () => { const channel = await pty(); return answer(await sendPty(channel, request("pty.status", {}))); })(),
         (async () => {
           const response = await this.recoveryRequest({ op: "status" });
           return response.ok === true && response.data && typeof response.data === "object"
@@ -219,7 +261,7 @@ export function createTerminalSessionBinding(
       ]);
       return { pty: ptyStatus, recovery: recoveryStatus };
     },
-    async closeWindow(windowLabel) { answer(await (await pty()).send(request("pty.closeWindow", { windowLabel }))); },
+    async closeWindow(windowLabel) { const channel = await pty(); answer(await sendPty(channel, request("pty.closeWindow", { windowLabel }))); },
   };
 
   async function release(session: number): Promise<void> {
@@ -228,7 +270,7 @@ export function createTerminalSessionBinding(
     if (stream) await stream.settled;
     const channel = await pty();
     await flushAcknowledgement(channel, session);
-    answer(await channel.send(request("pty.detachRenderer", { session })));
+    answer(await sendPty(channel, request("pty.detachRenderer", { session })));
     streams.delete(session);
     readers.delete(session);
     pending.delete(session);
