@@ -361,3 +361,52 @@ describe("a pane whose session ended", () => {
     expect(binding.open).toHaveBeenCalled();
   });
 });
+
+// A write that fails has lost the input and the session with it. The pane starts a session again
+// rather than standing blocked until something remounts it.
+describe("a pane whose write failed", () => {
+  it("starts a session again and takes input", async () => {
+    let sessions = 0;
+    let refuse = false;
+    const { binding } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    binding.open = vi.fn(async () => ++sessions);
+    binding.write = vi.fn(async () => {
+      if (refuse) throw new Error("no session 1 in this daemon");
+    });
+    const { pane } = mount(binding);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    expect(sessions).toBe(1);
+
+    refuse = true;
+    pane.sendInput("a");
+    await vi.waitFor(() => expect(sessions).toBe(2));
+    refuse = false;
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    expect(pane.writable).toBe(true);
+  });
+});
+
+// A frame the engine has no mirror for is a session that is gone. The pane starts one again.
+describe("a pane whose mirror is gone", () => {
+  it("starts a session again rather than standing blocked", async () => {
+    let sessions = 0;
+    let missing = false;
+    const { binding, emit } = fakeBinding(() => (missing
+      ? { ok: false, code: "NOT_FOUND", message: "no live terminal-state mirror for this key" }
+      : { ok: true, data: { outputSequence: 9, ...frameOf(["ab"]) } }));
+    binding.open = vi.fn(async () => ++sessions);
+    const { pane } = mount(binding);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    expect(sessions).toBe(1);
+
+    missing = true;
+    emit(1, new Uint8Array([1, 2, 3]));
+    await vi.waitFor(() => expect(sessions).toBeGreaterThan(1));
+    // A pane that never gets a frame back stops starting over: the reason is what it shows.
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("blocked"));
+    const spent = sessions;
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(sessions).toBe(spent);
+    expect(pane.status.current().failure?.code).toBe("FRAME_FAILED");
+  });
+});

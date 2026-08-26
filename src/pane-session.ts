@@ -112,6 +112,7 @@ export interface PaneSession {
 
 export const CALLER_PANE_ENV = "SOKSAK_CALLER_PANE";
 const FRAME_TIMEOUT_MS = 2000;
+const RESTART_LIMIT = 3;
 const TAIL_BYTES = 4096;
 const CWD_REPORT = /\x1b\]7;[^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
@@ -167,10 +168,14 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       presentation.markPtyWrite();
       status.refresh();
     }).catch((error) => {
-      if (!stopped) status?.set("blocked", {
+      if (stopped) return;
+      status?.set("blocked", {
         failure: { code: "INPUT_WRITE_FAILED", message: String(error) },
         fidelity: "unavailable",
       });
+      // A write that failed has lost the input and the session with it. The pane starts one again
+      // rather than standing blocked until something remounts it.
+      restartSession();
     });
   };
   const send = (text: string) => writeToPty(text, true);
@@ -258,6 +263,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     const outputSequence = Number(value.outputSequence);
     if (!Number.isSafeInteger(outputSequence) || outputSequence < 0 || !applyFrame(value)) return false;
     renderedSequence = outputSequence;
+    restartsWithoutProgress = 0;
     const frame = value;
     const reportedHistory = Number(value.historySize ?? frame.historySize);
     if (Number.isSafeInteger(reportedHistory) && reportedHistory >= 0) historySize = reportedHistory;
@@ -280,6 +286,8 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     status.set("blocked", {
       failure: { code: "FRAME_FAILED", message: String(error) }, fidelity: "unavailable",
     });
+    // A frame the engine has no mirror for is a session that is gone; the pane starts one again.
+    restartSession();
   };
   const flushByteOutput = async () => {
     if (writingOutput || stopped || pendingOutput.length === 0 || !presenter.writeOutput) return;
@@ -314,6 +322,9 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   };
   const outputAhead = () => requestedSequence > (renderedSequence ?? -1);
   let shown = true;
+  // Restarting a session is for one that went away while the pane was working. A pane that never
+  // gets a frame after restarting stays blocked with the reason rather than starting over forever.
+  let restartsWithoutProgress = 0;
   const scheduleRenderLatest = () => {
     if (frameRequest !== null || renderingTask || stopped || !shown || (!frameForced && !outputAhead())) return;
     frameRequest = setTimeout(() => {
@@ -492,6 +503,23 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     status.refresh();
     status.set("archived", { recoveryOutcome: "archived", fidelity: "complete" });
     return true;
+  };
+  // restartSession runs the start path again for a pane whose session is gone. One restart is in
+  // flight at a time, and a restart that fails leaves the pane blocked with the reason.
+  let restarting: Promise<void> | null = null;
+  const restartSession = () => {
+    if (stopped || restarting || restartsWithoutProgress >= RESTART_LIMIT) return;
+    restartsWithoutProgress += 1;
+    session = 0;
+    writable = false;
+    restarting = start()
+      .catch((error) => {
+        if (!stopped) status.set("blocked", {
+          failure: { code: "START_FAILED", message: String(error) },
+          fidelity: "unavailable", recoveryOutcome: "blocked",
+        });
+      })
+      .finally(() => { restarting = null; });
   };
   const start = async () => {
     status.set("preparing-recovery");
