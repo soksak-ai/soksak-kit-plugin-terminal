@@ -4,6 +4,46 @@ import { createTerminalSessionBinding, type TerminalSidecarChannel } from "./ter
 const settledClose = () => ({ dispose() {}, settled: Promise.resolve() });
 
 describe("shared terminal session binding", () => {
+  it("reopens a recovery sidecar after the previous channel fails", async () => {
+    const first: TerminalSidecarChannel = {
+      send: vi.fn(async () => { throw new Error("recovery sidecar ended"); }),
+      stream: vi.fn(),
+    };
+    const second: TerminalSidecarChannel = {
+      send: vi.fn(async () => ({ ok: true, result: { data: { sessions: [] } } })),
+      stream: vi.fn(),
+    };
+    let opens = 0;
+    const binding = createTerminalSessionBinding({
+      windowLabel: () => "window-a",
+      sidecar: { open: async () => (++opens === 1 ? first : second) },
+    }, { ptySidecarId: "pty", terminalSidecarId: "recovery" });
+
+    await expect(binding.recoveryRequest({ op: "status" })).rejects.toThrow("recovery sidecar ended");
+    await expect(binding.recoveryRequest({ op: "status" })).resolves.toMatchObject({ ok: true });
+    expect(opens).toBe(2);
+  });
+
+  it("reopens a PTY sidecar after the previous channel fails", async () => {
+    const first: TerminalSidecarChannel = {
+      send: vi.fn(async () => { throw new Error("PTY sidecar ended"); }),
+      stream: vi.fn(),
+    };
+    const second: TerminalSidecarChannel = {
+      send: vi.fn(async () => ({ ok: true, result: { data: {} } })),
+      stream: vi.fn(),
+    };
+    let opens = 0;
+    const binding = createTerminalSessionBinding({
+      windowLabel: () => "window-a",
+      sidecar: { open: async () => (++opens === 1 ? first : second) },
+    }, { ptySidecarId: "pty", terminalSidecarId: "recovery" });
+
+    await expect(binding.write(1, "a")).rejects.toThrow("PTY sidecar ended");
+    await expect(binding.write(1, "b")).resolves.toBeUndefined();
+    expect(opens).toBe(2);
+  });
+
   it("identifies a sidecar when a response has no error detail", async () => {
     const channel: TerminalSidecarChannel = {
       send: vi.fn(async () => ({ ok: false })),
