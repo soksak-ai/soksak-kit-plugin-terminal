@@ -246,6 +246,53 @@ describe("provider-backed terminal plugin", () => {
     }
   });
 
+  it("opens the engine sidecar the setting selects; the plugin's engine is the default", async () => {
+    const opened: string[] = [];
+    const run = async (engine: string | undefined) => {
+      let view: { mount(container: HTMLElement, context: unknown): void } | undefined;
+      const commands = new Map<string, Record<string, unknown>>();
+      const channel = {
+        send: vi.fn(async (request: Record<string, unknown>) => {
+          const command = String(request.command);
+          const data = command === "pty.pane" ? { held: false } : command === "pty.open" ? { session: 7 } : command === "terminal.prepareSession" ? { observerToken: "observer" } : {};
+          if (command === "terminal.archived") return { ok: false, error: "not found", result: { code: "NOT_FOUND" } };
+          return { ok: true, result: { data } };
+        }),
+        stream: vi.fn(async () => ({ answer: { ok: true, result: { data: { startSeq: 0 } } }, close: settledClose() })),
+      };
+      const host: ProviderTerminalPluginHost = {
+        windowLabel: () => "window", secrets: { generate: async () => ({ created: true }) },
+        sidecar: { open: async (name) => { opened.push(name); return channel; } },
+        settings: { get: () => engine },
+        ui: { registerView: (_id, provider) => { view = provider; return { dispose() {} }; } },
+        commands: { register: (name, spec) => { commands.set(name, spec); return { dispose() {} }; }, execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
+      };
+      activateProviderTerminalPlugin(host, [], {
+        pluginId: "plugin", engineId: "alacritty", ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-alacritty", programId: "terminal",
+        engines: { setting: "engine", sidecars: { alacritty: "soksak-sidecar-terminal-alacritty", vt100: "soksak-sidecar-terminal-vt100" } },
+      });
+      const root = document.createElement("div"); document.body.append(root); view!.mount(root, { viewId: `pane-${engine ?? "default"}` });
+      await vi.waitFor(() => expect(root.dataset.terminalPhase).toBe("live"));
+      const status = await (commands.get("status")!.handler as (params: Record<string, unknown>, context: { pane: string }) => Promise<Record<string, unknown>>)({ view: `pane-${engine ?? "default"}` }, { pane: `pane-${engine ?? "default"}` });
+      return status.engineId;
+    };
+    expect(await run("vt100")).toBe("vt100");
+    expect(opened).toContain("soksak-sidecar-terminal-vt100");
+    expect(opened).not.toContain("soksak-sidecar-terminal-alacritty");
+    opened.length = 0;
+    expect(await run(undefined)).toBe("alacritty");
+    expect(opened).toContain("soksak-sidecar-terminal-alacritty");
+    expect(await run("ghostty")).toBe("alacritty");
+  });
+
+  it("refuses an engine table that does not name the plugin's own engine sidecar", () => {
+    const host = { windowLabel: () => "window", secrets: { generate: async () => ({ created: true }) }, sidecar: { open: async () => ({ send: vi.fn(), stream: vi.fn() }) }, ui: { registerView: () => ({ dispose() {} }) }, commands: { register: () => ({ dispose() {} }) } } as unknown as ProviderTerminalPluginHost;
+    expect(() => activateProviderTerminalPlugin(host, [], {
+      pluginId: "plugin", engineId: "alacritty", ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-alacritty", programId: "terminal",
+      engines: { setting: "engine", sidecars: { vt100: "soksak-sidecar-terminal-vt100" } },
+    })).toThrow(/engines\.sidecars\.alacritty/);
+  });
+
   it("rejects extensions that replace standard terminal commands", () => {
     const host = {
       windowLabel: () => "window", sidecar: { open: vi.fn() },

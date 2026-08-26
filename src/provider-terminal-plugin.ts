@@ -5,7 +5,7 @@ import {
   type TerminalPluginPublicStatus,
 } from "@soksak/soksak-contract-plugin-terminal";
 import { createProviderFramePresenter, type ProviderFrame } from "./provider-frame-presenter";
-import { createTerminalSessionBinding, type TerminalSessionHost } from "./terminal-session-binding";
+import { createTerminalSessionBinding, type TerminalSessionBinding, type TerminalSessionHost } from "./terminal-session-binding";
 import { createTerminalStatusController } from "./terminal-status-publication";
 import {
   closedTerminalPresentation,
@@ -42,6 +42,8 @@ export interface ProviderTerminalPluginHost extends TerminalSessionHost {
     register(name: string, spec: Record<string, unknown>): { dispose(): void } | void;
     execute?(name: string, params?: Record<string, unknown>): Promise<unknown>;
   };
+  // The plugin's user settings (manifest configuration); the engine selection is read here.
+  settings?: { get(key: string): unknown };
   terminal?: TerminalSessionHost["terminal"] & {
     registerIo?(pane: string, io: {
       readBuffer(lines?: number): string;
@@ -58,6 +60,10 @@ export interface ProviderTerminalPluginConfig {
   ptySidecarId: string;
   terminalSidecarId: string;
   programId: string;
+  // Engine selection: the setting key the user chooses an engine with and the sidecar of every
+  // engine offered. engineId/terminalSidecarId are the default engine and must be one entry of the
+  // table. Every listed sidecar is a runtime dependency the manifest declares.
+  engines?: { setting: string; sidecars: Record<string, string> };
   renderer?: TerminalRendererAdapter;
   extensions?: TerminalCommandExtension[];
   label?: { en: string; ko: string };
@@ -97,6 +103,8 @@ export interface TerminalCommandExtension {
 }
 
 interface MountedScreen {
+  binding: TerminalSessionBinding;
+  engineId: string;
   pane: string;
   presenter: TerminalPresenter;
   session: number;
@@ -117,22 +125,41 @@ export function activateProviderTerminalPlugin(
 ): void {
   const screens = new Map<string, MountedScreen>();
   const stopBarriers = new Map<string, Promise<void>>();
-  const binding = createTerminalSessionBinding(host, {
-    ptySidecarId: config.ptySidecarId,
-    terminalSidecarId: config.terminalSidecarId,
-    onOperation(operation) {
-      for (const screen of screens.values()) {
-        screen.presenter.root.dataset.terminalOperation = operation;
-      }
-    },
-  });
+  if (config.engines && config.engines.sidecars[config.engineId] !== config.terminalSidecarId) {
+    throw new Error(`engines.sidecars.${config.engineId} must name ${config.terminalSidecarId}, the plugin's own engine sidecar`);
+  }
+  // The engine of a new pane: the user's setting when it names an offered engine, the plugin's
+  // engine otherwise. A pane keeps the engine it was mounted with.
+  const engineSelection = (): { engineId: string; terminalSidecarId: string } => {
+    if (!config.engines) return { engineId: config.engineId, terminalSidecarId: config.terminalSidecarId };
+    const chosen = host.settings?.get(config.engines.setting);
+    const engineId = typeof chosen === "string" && chosen in config.engines.sidecars ? chosen : config.engineId;
+    return { engineId, terminalSidecarId: config.engines.sidecars[engineId] };
+  };
+  const bindings = new Map<string, TerminalSessionBinding>();
+  const bindingFor = (terminalSidecarId: string): TerminalSessionBinding => {
+    let bound = bindings.get(terminalSidecarId);
+    if (!bound) {
+      bound = createTerminalSessionBinding(host, {
+        ptySidecarId: config.ptySidecarId,
+        terminalSidecarId,
+        onOperation(operation) {
+          for (const screen of screens.values()) {
+            if (screen.binding === bound) screen.presenter.root.dataset.terminalOperation = operation;
+          }
+        },
+      });
+      bindings.set(terminalSidecarId, bound);
+    }
+    return bound;
+  };
   const diagnosticsOrEmpty = async () => {
-    try { return await binding.diagnostics(); }
+    try { return await bindingFor(engineSelection().terminalSidecarId).diagnostics(); }
     catch { return { pty: {}, recovery: {} }; }
   };
   const windowGone = host.events?.on("window.gone", (payload?: { windowLabel?: string }) => {
     const windowLabel = payload?.windowLabel;
-    if (typeof windowLabel === "string" && windowLabel !== "") void binding.closeWindow(windowLabel);
+    if (typeof windowLabel === "string" && windowLabel !== "") for (const bound of bindings.values()) void bound.closeWindow(windowLabel);
   });
   if (windowGone) subscriptions.push(windowGone);
 
@@ -167,6 +194,8 @@ export function activateProviderTerminalPlugin(
   const view = {
     mount(container: HTMLElement, context: ViewContext) {
       const pane = context.viewId ?? "";
+      const { engineId, terminalSidecarId } = engineSelection();
+      const binding = bindingFor(terminalSidecarId);
       if (!pane) throw new Error("terminal view requires a view id");
       const readyToStart = screens.get(pane)?.stop() ?? stopBarriers.get(pane) ?? Promise.resolve();
 
@@ -249,7 +278,7 @@ export function activateProviderTerminalPlugin(
       status = createTerminalStatusController({
         root: container,
         pluginId: config.pluginId,
-        engineId: config.engineId,
+        engineId,
         rendererId: config.renderer?.rendererId ?? `${config.engineId}-frame`,
         rendererProfile: config.renderer?.rendererProfile ?? "web",
         publish(value) {
@@ -518,6 +547,8 @@ export function activateProviderTerminalPlugin(
       window.addEventListener("soksak:capture-prepare", capturePrepare);
       const viewDisposables: { dispose(): void }[] = [];
       const entry: MountedScreen = {
+        binding,
+        engineId,
         pane,
         presenter,
         get session() { return session; },
@@ -608,7 +639,7 @@ export function activateProviderTerminalPlugin(
   subscriptions.push(host.ui.registerView("content", view));
 
   const closedStatus = (): TerminalPluginPublicStatus => ({
-      pluginId: config.pluginId, engineId: config.engineId,
+      pluginId: config.pluginId, engineId: engineSelection().engineId,
       rendererId: config.renderer?.rendererId ?? `${config.engineId}-frame`,
       rendererProfile: config.renderer?.rendererProfile ?? "web",
       phase: "closed", recoveryOutcome: "blocked", fidelity: "unavailable",
@@ -638,7 +669,7 @@ export function activateProviderTerminalPlugin(
   register("archive", { view: viewParam }, async (params, context) => {
     const screen = target(params, context);
     if (!screen) return { archived: false };
-    const response = await binding.recoveryRequest({ op: "archive", pane: screen.pane });
+    const response = await screen.binding.recoveryRequest({ op: "archive", pane: screen.pane });
     return response.ok === true ? { archived: true, ...(response.data as object) } : response;
   });
   register("wait", {
@@ -703,7 +734,7 @@ export function activateProviderTerminalPlugin(
     if (!screen?.writable || typeof params.data !== "string") {
       return { sent: false };
     }
-    void binding.write(screen.session, params.data).then(() => {
+    void screen.binding.write(screen.session, params.data).then(() => {
       screen.presentation.markPtyWrite();
       screen.status.refresh();
     });
@@ -712,7 +743,7 @@ export function activateProviderTerminalPlugin(
   register("clear", { view: viewParam }, (params, context) => {
     const screen = target(params, context);
     if (!screen?.writable) return { cleared: false };
-    void binding.write(screen.session, "\x0c");
+    void screen.binding.write(screen.session, "\x0c");
     return { cleared: true };
   });
   register("focus", { view: viewParam }, (params, context) => ({
@@ -743,7 +774,7 @@ export function activateProviderTerminalPlugin(
       return extension.handler(params, screen ? {
         pane: screen.pane, presenter: screen.presenter,
         writable: screen.writable,
-        send: (data) => { void binding.write(screen.session, data); },
+        send: (data) => { void screen.binding.write(screen.session, data); },
       } : undefined);
     }, extension.danger);
   }
