@@ -220,3 +220,34 @@ describe("a byte-delivery renderer", () => {
     void pane;
   });
 });
+
+// The scroll command answers the same way whichever renderer paints the pane: a renderer that owns
+// its own scrollback is asked to move, and its own position is what the reply reports.
+describe("scrolling a byte-delivery pane", () => {
+  it("moves the renderer's own scrollback and reports its position", async () => {
+    let offset = 0;
+    const { binding } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    const { pane } = mount(binding, {
+      config: {
+        pluginId: "plugin", engineId: "vt100",
+        renderer: {
+          delivery: "bytes" as const, rendererId: "probe",
+          create: (root: HTMLElement) => ({
+            root, screen: root, input: root.ownerDocument.createElement("textarea"),
+            read: () => "", size: () => ({ cols: 0, rows: 0 }), measure: () => ({ cols: 0, rows: 0 }),
+            focus: () => true, dispose: () => {},
+            writeOutput: () => {}, applySnapshot: () => {}, onRendered: () => ({ dispose: () => {} }),
+            scrollState: () => ({ offset, historySize: 120 }),
+            scrollLines: (lines: number) => { offset = Math.max(0, Math.min(120, offset + lines)); },
+            scrollTo: (next: number) => { offset = Math.max(0, Math.min(120, next)); },
+          } as never),
+        },
+      },
+    });
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    await expect(pane.scroll({ lines: 40 })).resolves.toMatchObject({ offset: 40, historySize: 120 });
+    await expect(pane.scroll({ edge: "top" })).resolves.toMatchObject({ offset: 120 });
+    await expect(pane.scroll({ edge: "bottom" })).resolves.toMatchObject({ offset: 0 });
+    await expect(pane.scroll({ offset: 500 })).resolves.toMatchObject({ offset: 120 });
+  });
+});

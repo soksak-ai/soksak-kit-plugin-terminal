@@ -25,6 +25,11 @@ export interface TerminalPresenter {
   focus(): boolean;
   prepareFocusTransfer?(): void;
   refresh?(): void;
+  // A renderer that owns its own scrollback answers where it is and moves on request. offset counts
+  // rows back into history, as the terminal contract declares it.
+  scrollState?(): { offset: number; historySize: number };
+  scrollLines?(lines: number): void;
+  scrollTo?(offset: number): void;
   dispose(): void;
 }
 
@@ -531,6 +536,17 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       return { dispose: () => void inputListeners.delete(listener) };
     },
     async scroll(request) {
+      // A renderer that keeps its own scrollback is the authority on where it is.
+      if (presenter.scrollState) {
+        const state = presenter.scrollState();
+        const bounded = (value: number) => Math.max(0, Math.min(state.historySize, Math.floor(value)));
+        if (request.edge === "top") presenter.scrollTo?.(state.historySize);
+        else if (request.edge === "bottom") presenter.scrollTo?.(0);
+        else if (typeof request.offset === "number") presenter.scrollTo?.(bounded(request.offset));
+        else if (typeof request.lines === "number") presenter.scrollLines?.(request.lines);
+        const moved = presenter.scrollState();
+        return { pane: key, offset: moved.offset, historySize: moved.historySize };
+      }
       const clamp = (value: number) => Math.max(0, Math.min(historySize, Math.floor(value)));
       if (request.edge === "top") offset = historySize;
       else if (request.edge === "bottom") offset = 0;
