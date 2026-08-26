@@ -147,6 +147,12 @@ export function createPaneSet(host: PaneSetHost, input: PaneSetInput): PaneSet {
     else persist();
     return pane;
   };
+  const holdStopBarrier = (key: string, stopping: Promise<void>) => {
+    barriers.set(key, stopping);
+    void stopping.finally(() => {
+      if (barriers.get(key) === stopping) barriers.delete(key);
+    });
+  };
   // A closed pane is gone: its session ends with it, so no shell is left running for a pane nothing
   // will ever show again. Unmounting is the other case, and that one detaches.
   const closePane = async (key: string): Promise<boolean> => {
@@ -154,10 +160,7 @@ export function createPaneSet(host: PaneSetHost, input: PaneSetInput): PaneSet {
     if (!pane) return false;
     panes.delete(key);
     const stopping = pane.stop("close");
-    barriers.set(key, stopping);
-    void stopping.finally(() => {
-      if (barriers.get(key) === stopping) barriers.delete(key);
-    });
+    holdStopBarrier(key, stopping);
     if (focusedKey === key) {
       focusedKey = null;
       const remaining = panes.keys().next().value;
@@ -218,7 +221,11 @@ export function createPaneSet(host: PaneSetHost, input: PaneSetInput): PaneSet {
     // session it left. A pane that is actually closed goes through closePane, which ends it.
     async dispose() {
       disposed = true;
-      const stops = [...panes.values()].map((pane) => pane.stop());
+      const stops = [...panes.values()].map((pane) => {
+        const stopping = pane.stop();
+        holdStopBarrier(pane.key, stopping);
+        return stopping;
+      });
       panes.clear();
       focusedKey = null;
       disposables.splice(0).forEach((item) => item.dispose());
