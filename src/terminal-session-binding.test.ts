@@ -4,6 +4,41 @@ import { createTerminalSessionBinding, type TerminalSidecarChannel } from "./ter
 const settledClose = () => ({ dispose() {}, settled: Promise.resolve() });
 
 describe("shared terminal session binding", () => {
+  it("closes every session stream and sidecar handle when its plugin generation is disposed", async () => {
+    const streamClose = vi.fn();
+    const ptyClose = vi.fn(async () => {});
+    const recoveryClose = vi.fn(async () => {});
+    const pty: TerminalSidecarChannel = {
+      send: vi.fn(async (request) => ({
+        ok: true,
+        result: { data: request.command === "pty.open" ? { session: 4 } : {} },
+      })),
+      stream: vi.fn(async () => ({
+        answer: { ok: true, result: { data: { startSeq: 0 } } },
+        close: { dispose: streamClose, settled: Promise.resolve() },
+      })),
+      close: ptyClose,
+    };
+    const recovery: TerminalSidecarChannel = {
+      send: vi.fn(async () => ({ ok: true, result: { data: {} } })),
+      stream: vi.fn(),
+      close: recoveryClose,
+    };
+    const binding = createTerminalSessionBinding({
+      windowLabel: () => "window-a",
+      commands: { execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
+      sidecar: { open: async (name) => name === "pty" ? pty : recovery },
+    }, { ptySidecarId: "pty", terminalSidecarId: "recovery" });
+    await binding.open("pane-a", 80, 24, "none");
+    await binding.recoveryRequest({ op: "status" });
+
+    await binding.dispose();
+    await binding.dispose();
+    expect(streamClose).toHaveBeenCalledOnce();
+    expect(ptyClose).toHaveBeenCalledOnce();
+    expect(recoveryClose).toHaveBeenCalledOnce();
+  });
+
   it("publishes PTY stream termination and removes the listener on dispose", async () => {
     let end!: (reason: string) => void;
     const channel: TerminalSidecarChannel = {
