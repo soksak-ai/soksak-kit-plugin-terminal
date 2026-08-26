@@ -4,6 +4,34 @@ import { createTerminalSessionBinding, type TerminalSidecarChannel } from "./ter
 const settledClose = () => ({ dispose() {}, settled: Promise.resolve() });
 
 describe("shared terminal session binding", () => {
+  it("publishes PTY stream termination and removes the listener on dispose", async () => {
+    let end!: (reason: string) => void;
+    const channel: TerminalSidecarChannel = {
+      send: vi.fn(async (request) => ({
+        ok: true,
+        result: { data: request.command === "pty.open" ? { session: 4 } : {} },
+      })),
+      stream: vi.fn(async (_request, handlers) => {
+        end = handlers.onEnd ?? (() => {});
+        return { answer: { ok: true, result: { data: { startSeq: 0 } } }, close: settledClose() };
+      }),
+    };
+    const binding = createTerminalSessionBinding({
+      windowLabel: () => "window-a",
+      commands: { execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
+      sidecar: { open: async () => channel },
+    }, { ptySidecarId: "pty", terminalSidecarId: "recovery" });
+    const session = await binding.open("pane-a", 80, 24, "none");
+    const ended = vi.fn();
+    const listener = binding.onEnd(session, ended);
+
+    end("PTY sidecar ended");
+    expect(ended).toHaveBeenCalledExactlyOnceWith("PTY sidecar ended");
+    listener.dispose();
+    end("again");
+    expect(ended).toHaveBeenCalledOnce();
+  });
+
   it("reopens a recovery sidecar after the previous channel fails", async () => {
     const first: TerminalSidecarChannel = {
       send: vi.fn(async () => { throw new Error("recovery sidecar ended"); }),

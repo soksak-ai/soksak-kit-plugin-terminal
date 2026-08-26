@@ -29,6 +29,7 @@ function fakeBinding() {
     close: vi.fn(async () => {}),
     detach: vi.fn(async (session: number) => { detached.push(session); }),
     onData: (session, callback) => { readers.set(session, callback); return { dispose: () => readers.delete(session) }; },
+    onEnd: () => ({ dispose() {} }),
     paneAlive: vi.fn(async () => false),
     recoveryRequest: vi.fn(async (request: Record<string, unknown>) => {
       switch (request.op) {

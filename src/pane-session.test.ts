@@ -20,6 +20,7 @@ function fakeBinding(frames: () => FrameReply) {
   let nextSession = 0;
   const taken = new Map<number, number>();
   const readers = new Map<number, (bytes: Uint8Array, throughSeq: number) => void>();
+  const enders = new Map<number, (reason: string) => void>();
   const recovery: Array<Record<string, unknown>> = [];
   const detached: number[] = [];
   const binding: TerminalSessionBinding = {
@@ -29,6 +30,7 @@ function fakeBinding(frames: () => FrameReply) {
     close: vi.fn(async () => {}),
     detach: vi.fn(async (session: number) => { detached.push(session); }),
     onData: (session, callback) => { readers.set(session, callback); return { dispose: () => readers.delete(session) }; },
+    onEnd: (session, callback) => { enders.set(session, callback); return { dispose: () => enders.delete(session) }; },
     paneAlive: vi.fn(async () => false),
     recoveryRequest: vi.fn(async (request: Record<string, unknown>) => {
       recovery.push(request);
@@ -48,7 +50,8 @@ function fakeBinding(frames: () => FrameReply) {
     taken.set(session, throughSeq);
     readers.get(session)?.(bytes, throughSeq);
   };
-  return { binding, recovery, detached, emit };
+  const emitEnd = (session: number, reason: string) => enders.get(session)?.(reason);
+  return { binding, recovery, detached, emit, emitEnd };
 }
 
 const mounted: Array<{ stop(): Promise<void> }> = [];
@@ -383,6 +386,34 @@ describe("a pane whose write failed", () => {
     refuse = false;
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
     expect(pane.writable).toBe(true);
+  });
+  it("restarts after a public pane write fails", async () => {
+    let sessions = 0;
+    let refuse = false;
+    const { binding } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    binding.open = vi.fn(async () => ++sessions);
+    binding.write = vi.fn(async () => { if (refuse) throw new Error("no session 1 in this daemon"); });
+    const { pane } = mount(binding);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+
+    refuse = true;
+    await expect(pane.write("a")).rejects.toThrow("no session 1");
+    await vi.waitFor(() => expect(sessions).toBe(2));
+  });
+});
+
+describe("a pane whose PTY stream ended", () => {
+  it("restarts without waiting for another input", async () => {
+    let sessions = 0;
+    const { binding, emitEnd } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    binding.open = vi.fn(async () => ++sessions);
+    const { pane } = mount(binding);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+
+    emitEnd(1, "PTY sidecar ended");
+    await vi.waitFor(() => expect(sessions).toBe(2));
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    expect(pane.status.current().failure).toBeNull();
   });
 });
 
