@@ -240,6 +240,7 @@ describe("workbench", () => {
   // DOM reads the same split state the commands report.
   it("states the split state on the root and on every pane node", () => {
     const { root, workbench, node } = fixture();
+    expect(root.dataset.node).toBe("terminal-root");
     expect(root.dataset.paneCount).toBe("1");
     expect(root.dataset.focusedPane).toBe("tab-a.1");
     expect(root.dataset.maximized).toBe("");

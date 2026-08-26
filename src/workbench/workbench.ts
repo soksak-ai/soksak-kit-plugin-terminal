@@ -142,8 +142,10 @@ export function createWorkbench(root: HTMLElement, paneSet: WorkbenchPaneSet, op
   paneSet.bindLayout(() => ({ ...restoreState() }));
   const focusedPane = () => (focusedKey === null ? undefined : mounted.get(focusedKey)?.pane);
   // The nodes state what the commands answer: how many panes there are, which one has focus, which
-  // one is maximized, and whether input reaches them all.
+  // one is maximized, and whether input reaches them all. The view's own node carries the view's
+  // state; each pane's root carries that pane's, under its suffix.
   const publishState = () => {
+    root.dataset.node = "terminal-root";
     root.dataset.paneCount = String(mounted.size);
     root.dataset.focusedPane = focusedKey ?? "";
     root.dataset.maximized = maximizedKey ?? "";
