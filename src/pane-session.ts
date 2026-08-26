@@ -549,9 +549,24 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   const restartNow = () => {
     if (stopped || restarting) return;
     restartsWithoutProgress += 1;
+    const attached = session;
     session = 0;
     writable = false;
-    restarting = start()
+    output?.dispose();
+    output = undefined;
+    restarting = (async () => {
+      if (attached) {
+        try {
+          await binding.detach(attached);
+        } catch (error) {
+          if (!stopped) status.set("blocked", {
+            failure: { code: "SESSION_DETACH_FAILED", message: String(error) },
+            fidelity: "unavailable", recoveryOutcome: "blocked",
+          });
+        }
+      }
+      if (!stopped) await start();
+    })()
       .then(() => {
         // A pane that came back carries no reason to be worried about: the failure that took it
         // down is what it showed while it was down. A failure the pane did not recover from — a
