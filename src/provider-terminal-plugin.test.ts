@@ -574,6 +574,54 @@ describe("provider-backed terminal plugin", () => {
     expect(requests).not.toContain("pty.close");
   });
 
+  it("detaches mounted panes before closing generation-owned sidecar handles", async () => {
+    let view: View | undefined;
+    const order: string[] = [];
+    const pty = {
+      send: vi.fn(async (request: Record<string, unknown>) => {
+        const command = String(request.command);
+        const data = command === "pty.pane" ? { held: false }
+          : command === "pty.open" ? { session: 7 } : {};
+        if (command === "pty.detachRenderer") order.push("pane.detach");
+        return { ok: true, result: { data } };
+      }),
+      stream: vi.fn(async () => ({
+        answer: { ok: true, result: { data: { startSeq: 0 } } },
+        close: { dispose: () => { order.push("stream.close"); }, settled: Promise.resolve() },
+      })),
+      close: vi.fn(async () => { order.push("pty.handle.close"); }),
+    };
+    const recovery = {
+      send: vi.fn(async (request: Record<string, unknown>) => {
+        if (request.command === "terminal.archived") {
+          return { ok: false, error: "not found", result: { code: "NOT_FOUND" } };
+        }
+        const data = request.command === "terminal.prepareSession" ? { observerToken: "observer" } : {};
+        return { ok: true, result: { data } };
+      }),
+      stream: vi.fn(),
+      close: vi.fn(async () => { order.push("recovery.handle.close"); }),
+    };
+    const subscriptions: Array<{ dispose(): void | Promise<void> }> = [];
+    const host: ProviderTerminalPluginHost = {
+      windowLabel: () => "window",
+      sidecar: { open: async (name) => name === "pty" ? pty : recovery },
+      ui: { registerView: (_id, provider) => { view = provider; return { dispose() {} }; } },
+      commands: { register: () => ({ dispose() {} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
+    };
+    activateProviderTerminalPlugin(host, subscriptions, {
+      pluginId: "plugin", engineId: "vt100", ptySidecarId: "pty",
+      terminalSidecarId: "recovery", programId: "terminal-vt100",
+    });
+    const root = document.createElement("div"); document.body.append(root); view!.mount(root, { viewId: "pane" });
+    await vi.waitFor(() => expect(root.dataset.terminalPhase).toBe("live"));
+
+    for (const subscription of [...subscriptions].reverse()) await subscription.dispose();
+    expect(order).toEqual([
+      "stream.close", "pane.detach", "pty.handle.close", "recovery.handle.close",
+    ]);
+  });
+
   it("rehydrates a live pane and attaches from its snapshot lease", async () => {
     let view: View | undefined;
     const requests: Array<{ command: string; payload: Record<string, unknown> }> = [];
