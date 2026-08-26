@@ -35,6 +35,7 @@ export interface TerminalSessionBinding {
   close(session: number): Promise<void>;
   detach(session: number): Promise<void>;
   onData(session: number, callback: (bytes: Uint8Array, throughSeq: number) => void): { dispose(): void };
+  onEnd(session: number, callback: (reason: string) => void): { dispose(): void };
   paneAlive(paneId: string): Promise<boolean>;
   recoveryRequest(request: Record<string, unknown>): Promise<Record<string, unknown>>;
   diagnostics(): Promise<{ pty: Record<string, unknown>; recovery: Record<string, unknown> }>;
@@ -114,6 +115,7 @@ export function createTerminalSessionBinding(
   };
   const streams = new Map<number, { dispose(): void; settled: Promise<void> }>();
   const readers = new Map<number, Set<(bytes: Uint8Array, throughSeq: number) => void>>();
+  const enders = new Map<number, Set<(reason: string) => void>>();
   const pending = new Map<number, Array<{ bytes: Uint8Array; throughSeq: number }>>();
   const taken = new Map<number, number>();
   type AcknowledgementState = {
@@ -201,10 +203,13 @@ export function createTerminalSessionBinding(
         stream = await channel.stream(request(
           leaseToken ? "pty.attachLease" : "pty.attach",
           leaseToken ? { token: leaseToken } : { session },
-        ), { onBytes(bytes) {
-          if (!streamStarted) { beforeAnswer.push(bytes.slice()); return; }
-          deliver(bytes);
-        }});
+        ), {
+          onBytes(bytes) {
+            if (!streamStarted) { beforeAnswer.push(bytes.slice()); return; }
+            deliver(bytes);
+          },
+          onEnd(reason) { enders.get(session)?.forEach((listener) => listener(reason)); },
+        });
       } catch (error) {
         invalidatePty(channel);
         throw error;
@@ -231,6 +236,12 @@ export function createTerminalSessionBinding(
       const set = readers.get(session) ?? new Set(); readers.set(session, set); set.add(callback);
       for (const item of pending.get(session) ?? []) callback(item.bytes, item.throughSeq); pending.delete(session);
       return { dispose: () => void readers.get(session)?.delete(callback) };
+    },
+    onEnd(session, callback) {
+      const set = enders.get(session) ?? new Set();
+      enders.set(session, set);
+      set.add(callback);
+      return { dispose: () => void enders.get(session)?.delete(callback) };
     },
     async paneAlive(paneId) { const channel = await pty(); return answer(await sendPty(channel, request("pty.pane", { paneId }))).held === true; },
     async recoveryRequest(value) {
@@ -273,6 +284,7 @@ export function createTerminalSessionBinding(
     answer(await sendPty(channel, request("pty.detachRenderer", { session })));
     streams.delete(session);
     readers.delete(session);
+    enders.delete(session);
     pending.delete(session);
     taken.delete(session);
     acknowledgements.delete(session);

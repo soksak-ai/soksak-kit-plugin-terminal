@@ -129,6 +129,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   let session = 0;
   let stopped = false;
   let output: { dispose(): void } | undefined;
+  let outputEnd: { dispose(): void } | undefined;
   let requestedSequence = 0;
   let renderedSequence: number | null = null;
   let renderingTask: Promise<void> | null = null;
@@ -155,7 +156,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   let presentation: TerminalPresentationStatusController;
   let status: TerminalStatusController;
 
-  const writeToPty = (text: string, acceptedInput: boolean) => {
+  const writeToPty = (text: string, acceptedInput: boolean): Promise<void> => {
     if (acceptedInput) {
       presentation.markInputAccepted();
       status?.refresh();
@@ -164,21 +165,23 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     // Input the pane cannot deliver is not input that quietly disappears. A pane with nothing behind
     // it says so and starts a session again; a pane that is still starting keeps its silence.
     if (!session) {
+      const error = new Error(`pane ${key} has no session`);
       if (!stopped && status && status.current().phase === "live") {
         status.set("blocked", {
-          failure: { code: "INPUT_WRITE_FAILED", message: `pane ${key} has no session` },
+          failure: { code: "INPUT_WRITE_FAILED", message: error.message },
           fidelity: "unavailable",
         });
         restartSession();
       }
-      return;
+      return Promise.reject(error);
     }
-    if (!writable) return;
+    if (!writable) return Promise.reject(new Error(`pane ${key} is not writable`));
     const attached = session;
-    writeQueue = writeQueue.then(() => binding.write(attached, text)).then(() => {
+    const result = writeQueue.then(() => binding.write(attached, text)).then(() => {
       presentation.markPtyWrite();
       status.refresh();
-    }).catch((error) => {
+    });
+    writeQueue = result.catch((error) => {
       if (stopped) return;
       status?.set("blocked", {
         failure: { code: "INPUT_WRITE_FAILED", message: String(error) },
@@ -188,8 +191,9 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       // rather than standing blocked until something remounts it.
       restartSession();
     });
+    return result;
   };
-  const send = (text: string) => writeToPty(text, true);
+  const send = (text: string) => { void writeToPty(text, true).catch(() => {}); };
   const presenter: TerminalPresenter = config.renderer
     ? config.renderer.create(root, key, send, { nodeSuffix, hostPixels })
     : (input.presenterFactory ?? config.presenter ?? defaultTerminalPresenterFactory)(root, send, { nodeSuffix, hostPixels });
@@ -428,6 +432,14 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       requestedSequence = Math.max(requestedSequence, throughSeq);
       scheduleRenderLatest();
     });
+    outputEnd = binding.onEnd(session, (reason) => {
+      if (stopped || session !== opened) return;
+      status.set("blocked", {
+        failure: { code: "SESSION_ENDED", message: reason || `pane ${key} stream ended` },
+        fidelity: "unavailable", recoveryOutcome: "blocked",
+      });
+      restartSession();
+    });
     writable = true;
     requestResize();
   };
@@ -554,6 +566,8 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     writable = false;
     output?.dispose();
     output = undefined;
+    outputEnd?.dispose();
+    outputEnd = undefined;
     restarting = (async () => {
       if (attached) {
         try {
@@ -645,12 +659,9 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     set title(value: string | null) { title = value; },
     hostPixels,
     async write(data) {
-      if (!writable || !session) throw new Error(`pane ${key} is not writable`);
-      await binding.write(session, data);
-      presentation.markPtyWrite();
-      status.refresh();
+      await writeToPty(data, false);
     },
-    sendInput(data) { writeToPty(data, false); },
+    sendInput(data) { void writeToPty(data, false).catch(() => {}); },
     onInput(listener) {
       inputListeners.add(listener);
       return { dispose: () => void inputListeners.delete(listener) };
@@ -733,6 +744,7 @@ setShown(next) {
       root.removeEventListener("focusout", focusChanged);
       window.removeEventListener("soksak:capture-prepare", capturePrepare);
       output?.dispose();
+      outputEnd?.dispose();
       presenterRendering?.dispose();
       outputListeners.clear();
       inputListeners.clear();
