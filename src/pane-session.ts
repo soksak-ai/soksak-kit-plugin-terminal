@@ -112,7 +112,6 @@ export interface PaneSession {
 
 export const CALLER_PANE_ENV = "SOKSAK_CALLER_PANE";
 const FRAME_TIMEOUT_MS = 2000;
-const RESTART_LIMIT = 3;
 const TAIL_BYTES = 4096;
 const CWD_REPORT = /\x1b\]7;[^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
@@ -275,6 +274,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     const outputSequence = Number(value.outputSequence);
     if (!Number.isSafeInteger(outputSequence) || outputSequence < 0 || !applyFrame(value)) return false;
     renderedSequence = outputSequence;
+    // A frame that was applied is the pane working again: the retry delay starts over from there.
     restartsWithoutProgress = 0;
     const frame = value;
     const reportedHistory = Number(value.historySize ?? frame.historySize);
@@ -440,7 +440,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     ...(input.cwd ? { cwd: input.cwd } : {}),
     env: { [CALLER_PANE_ENV]: key },
   });
-  const startFresh = async (outcome?: { recoveryOutcome?: "archived" }) => {
+  const startFresh = async (outcome?: { recoveryOutcome?: "archived" | "continued" }) => {
     root.dataset.terminalOperation = "preparing-observer";
     const prepared = requireReply(await binding.recoveryRequest({
       op: "prepareSession", pane: key, cols: 80, rows: 24,
@@ -469,7 +469,15 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       op: "ensureSession", pane: key, cols: 80, rows: 24,
     }), "ensureSession");
     if (stopped) return;
-    const restored = requireReply(await binding.recoveryRequest({ op: "rehydrate", pane: key }), "rehydrate");
+    // The screen a pane lost is lost: an observer that missed part of the output cannot rebuild it.
+    // The shell behind the pane is not lost, so the pane attaches to that instead of failing.
+    const rehydrated = await binding.recoveryRequest({ op: "rehydrate", pane: key });
+    if (stopped) return;
+    if (rehydrated.ok !== true && rehydrated.code === "SOURCE_GAP") {
+      await startFresh({ recoveryOutcome: "continued" });
+      return;
+    }
+    const restored = requireReply(rehydrated, "rehydrate");
     if (stopped) return;
     const leaseToken = typeof restored.leaseToken === "string" ? restored.leaseToken : "";
     if (!leaseToken || (bytesDelivery ? !presenter.applySnapshot : !applyFrame(restored.frame))) {
@@ -526,11 +534,13 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   // restartSession runs the start path again for a pane whose session is gone. One restart is in
   // flight at a time, and a restart that fails leaves the pane blocked with the reason.
   let restarting: Promise<void> | null = null;
-  const retryDelayMs = () => Math.min(8000, 250 * 2 ** Math.max(0, restartsWithoutProgress - 1));
+  // The first try is immediate; every try after it waits, and the wait grows to half a minute. A
+  // pane that cannot reach its terminal is waiting for something outside itself, and asking again
+  // as fast as it can costs the whole application while changing nothing.
+  const retryDelayMs = () => Math.min(30_000, 1000 * 2 ** Math.max(0, restartsWithoutProgress - 1));
   const restartSession = () => {
     if (stopped || restarting || retryTimer !== null) return;
-    if (restartsWithoutProgress >= RESTART_LIMIT) {
-      // Past the first few tries the pane waits between them rather than spinning.
+    if (restartsWithoutProgress >= 1) {
       retryTimer = setTimeout(() => { retryTimer = null; restartNow(); }, retryDelayMs());
       return;
     }

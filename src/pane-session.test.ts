@@ -401,13 +401,11 @@ describe("a pane whose mirror is gone", () => {
 
     missing = true;
     emit(1, new Uint8Array([1, 2, 3]));
-    await vi.waitFor(() => expect(sessions).toBeGreaterThan(1));
-    // A pane that never gets a frame back stops starting over: the reason is what it shows.
-    await vi.waitFor(() => expect(pane.status.current().phase).toBe("blocked"));
+    await vi.waitFor(() => expect(sessions).toBeGreaterThan(1), { timeout: 4000 });
+    // The pane waits between tries rather than starting over as fast as it can.
     const spent = sessions;
-    await new Promise((resolve) => setTimeout(resolve, 60));
+    await new Promise((resolve) => setTimeout(resolve, 200));
     expect(sessions).toBe(spent);
-    expect(pane.status.current().failure?.code).toBe("FRAME_FAILED");
   });
 });
 
@@ -461,13 +459,34 @@ describe("a pane that cannot reach its terminal", () => {
 
     broken = true;
     emit(1, new Uint8Array([1, 2, 3]));
-    await vi.waitFor(() => expect(pane.status.current().phase).toBe("blocked"), { timeout: 3000 });
     const gaveUp = sessions;
     // The pane is still trying while it is down.
-    await vi.waitFor(() => expect(sessions).toBeGreaterThan(gaveUp), { timeout: 5000 });
+    await vi.waitFor(() => expect(sessions).toBeGreaterThan(gaveUp), { timeout: 8000 });
 
     broken = false;
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"), { timeout: 8000 });
     expect(pane.status.current().failure).toBeNull();
   }, 20000);
+});
+
+// A pane whose engine missed part of the output cannot be shown as it was. The screen it lost is
+// lost; the shell behind it is not, so the pane attaches to that shell instead of failing forever.
+describe("a pane whose engine missed output", () => {
+  it("attaches to the shell instead of failing on the gap", async () => {
+    let sessions = 0;
+    const { binding } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    binding.paneAlive = vi.fn(async () => true);
+    binding.open = vi.fn(async () => ++sessions);
+    const original = binding.recoveryRequest;
+    binding.recoveryRequest = vi.fn(async (request: Record<string, unknown>) => {
+      if (request.op === "rehydrate") {
+        return { ok: false, code: "SOURCE_GAP", message: "the terminal-state observer missed source events" };
+      }
+      return original(request);
+    }) as never;
+    const { pane } = mount(binding);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    expect(pane.writable).toBe(true);
+    expect(sessions).toBe(1);
+  });
 });
