@@ -270,3 +270,19 @@ describe("ending a pane", () => {
     expect(binding.detach).toHaveBeenCalledTimes(1);
   });
 });
+
+// A pane that is not live states why inside itself. A blank screen with nothing written on it is a
+// pane the reader cannot tell apart from an idle shell.
+describe("a pane that is not live", () => {
+  it("states the phase it is in, in the pane", async () => {
+    const { binding } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    const { pane, root } = mount(binding);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    const notice = root.querySelector<HTMLElement>('[data-node="terminal-restore-status/2"]')!;
+    expect(notice.hidden).toBe(true);
+
+    pane.status.set("archived", { recoveryOutcome: "archived" });
+    expect(notice.hidden).toBe(false);
+    expect(notice.textContent).toContain("archived");
+  });
+});

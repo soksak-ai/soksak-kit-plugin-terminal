@@ -212,8 +212,14 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     rendererId: config.renderer?.rendererId ?? `${config.engineId}-frame`,
     rendererProfile: config.renderer?.rendererProfile ?? "web",
     publish(value) {
-      notice.hidden = value.failure === null;
-      notice.textContent = value.failure ? `${value.failure.code}: ${value.failure.message}` : "";
+      // A pane that is not live says so inside itself. A failure states its code and message; any
+      // other phase that is not live states the phase, because a blank screen alone is a pane the
+      // reader cannot tell apart from an idle shell.
+      const spoken = value.failure
+        ? `${value.failure.code}: ${value.failure.message}`
+        : value.phase === "live" ? "" : value.phase;
+      notice.hidden = spoken === "";
+      notice.textContent = spoken;
       input.publish(value);
     },
     presentation: presentation.current,
