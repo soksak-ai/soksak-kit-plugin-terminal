@@ -32,7 +32,8 @@ export interface TerminalRendererAdapter {
   delivery: "frames" | "bytes";
   rendererId: string;
   rendererProfile?: "web" | "native-surface";
-  create(container: HTMLElement, pane: string, send: (text: string) => void): TerminalPresenter;
+  // A renderer mounts inside one pane: options name the pane's nodes and its box.
+  create(container: HTMLElement, pane: string, send: (text: string) => void, options: TerminalPresenterOptions): TerminalPresenter;
 }
 
 export interface TerminalPresenterOptions {
@@ -165,7 +166,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   };
   const send = (text: string) => writeToPty(text, true);
   const presenter: TerminalPresenter = config.renderer
-    ? config.renderer.create(root, key, send)
+    ? config.renderer.create(root, key, send, { nodeSuffix, hostPixels })
     : (input.presenterFactory ?? config.presenter ?? defaultTerminalPresenterFactory)(root, send, { nodeSuffix, hostPixels });
   // The pane owns the one notice inside it. It reads the failure the status carries and takes no
   // pointer events, so the terminal beneath keeps the mouse.

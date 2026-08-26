@@ -188,3 +188,35 @@ describe("pane session", () => {
     await expect(pane.waitIdle(1000, 20)).rejects.toThrow("idle wait timed out");
   });
 });
+
+// A renderer that takes bytes still mounts inside a pane, so it is told which pane's nodes it owns.
+describe("a byte-delivery renderer", () => {
+  it("is told the pane's node suffix and the pane's box", () => {
+    const seen: Array<{ pane: string; options: unknown }> = [];
+    const { binding } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    const { pane } = mount(binding, {
+      config: {
+        pluginId: "plugin", engineId: "vt100",
+        renderer: {
+          delivery: "bytes" as const, rendererId: "probe",
+          create: (root: HTMLElement, key: string, _send: (text: string) => void, options: unknown) => {
+            seen.push({ pane: key, options });
+            const screen = root.ownerDocument.createElement("pre");
+            root.append(screen);
+            return {
+              root, screen, input: root.ownerDocument.createElement("textarea"),
+              read: () => "", size: () => ({ cols: 0, rows: 0 }), measure: () => ({ cols: 0, rows: 0 }),
+              focus: () => true, dispose: () => {},
+              writeOutput: () => {}, applySnapshot: () => {}, onRendered: () => ({ dispose: () => {} }),
+            } as never;
+          },
+        },
+      },
+    });
+    expect(seen).toHaveLength(1);
+    expect(seen[0].pane).toBe("tab-a.2");
+    expect(seen[0].options).toMatchObject({ nodeSuffix: "2" });
+    expect(typeof (seen[0].options as { hostPixels: unknown }).hostPixels).toBe("function");
+    void pane;
+  });
+});
