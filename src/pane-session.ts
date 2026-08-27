@@ -763,10 +763,12 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
         return input.cwd ?? null;
       }
     },
-setShown(next) {
+    setShown(next) {
       if (shown === next) return;
       shown = next;
-      if (shown) { frameForced = true; scheduleRenderLatest(); }
+      if (!shown) return;
+      if (bytesDelivery) presenter.refresh?.();
+      else { frameForced = true; scheduleRenderLatest(); }
     },
         requestResize,
     stop(intent = "detach") {
