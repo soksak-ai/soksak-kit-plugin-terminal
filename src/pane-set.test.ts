@@ -156,6 +156,21 @@ describe("pane set", () => {
     expect(items.some((item) => item.id.includes("tab-a."))).toBe(false);
   });
 
+  it("shows the focused pane's plugin and engine in the status bar", () => {
+    const { set, items, paneRoot } = setup();
+    set.openPane({ root: paneRoot() });
+    set.openPane({ root: paneRoot(), engineId: "vt220" });
+    expect(items.filter((item) => item.id === "kind:tab-a").at(-1)).toMatchObject({
+      label: "Terminal · vt100",
+    });
+
+    set.focusPane("tab-a.2");
+
+    expect(items.filter((item) => item.id === "kind:tab-a").at(-1)).toMatchObject({
+      label: "Terminal · vt220",
+    });
+  });
+
   it("persists the next key and every pane, and seeds the next key from restore", () => {
     const { set, states, paneRoot } = setup({}, { next: 7 });
     expect(set.nextKey()).toBe("tab-a.7");
