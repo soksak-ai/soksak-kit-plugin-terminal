@@ -1,7 +1,7 @@
 # soksak-kit-plugin-terminal
 
 Reusable browser-side implementation for terminal plugins implementing
-`soksak-spec-plugin-terminal` 0.0.7.
+`soksak-spec-plugin-terminal` 0.0.8.
 
 The kit owns view registration, PTY and recovery lifecycle, resizing, public status, and every
 command required by the terminal plugin contract. A plugin may supply a renderer adapter for engine
