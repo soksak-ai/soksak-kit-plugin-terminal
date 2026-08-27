@@ -30,9 +30,10 @@ export interface TerminalPresenter {
   focus(): boolean;
   prepareFocusTransfer?(): void;
   refresh?(): void;
-  // A surface renderer draws outside the document; the host's shown state must
-  // reach it or its layer stays painted over every overlay.
-  setShown?(shown: boolean): void;
+  // A surface renderer draws outside the document; the host's shown state and
+  // dim must reach it or its layer stays painted over every overlay and never
+  // dims. dim is 0..1 — the same fraction the document veil would paint.
+  setShown?(shown: boolean, dim?: number): void;
   prepareCapture?(): Promise<void>;
   // A renderer that owns its own scrollback answers where it is and moves on request. offset counts
   // rows back into history, as the terminal contract declares it.
@@ -114,8 +115,8 @@ export interface PaneSession {
   cwd(): string | null;
   requestResize(): void;
   // A pane nobody can see is not painted: it keeps its session and its output and asks for a frame
-  // again when it is shown.
-  setShown(shown: boolean): void;
+  // again when it is shown. dim (0..1) is the focus lighting the host takes off it.
+  setShown(shown: boolean, dim?: number): void;
   // "detach" keeps the session for the pane to reattach to; "close" ends it with the pane.
   stop(intent?: "detach" | "close"): Promise<void>;
 }
@@ -819,10 +820,12 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
         return input.cwd ?? null;
       }
     },
-    setShown(next) {
+    setShown(next, dim = 0) {
+      // dim can change while shown does not (focus moving between panes); the
+      // presenter is told every time so a surface renderer re-declares alpha.
+      presenter.setShown?.(next, dim);
       if (shown === next) return;
       shown = next;
-      presenter.setShown?.(next);
       if (!shown) return;
       if (bytesDelivery || surfaceDelivery) presenter.refresh?.();
       else { frameForced = true; scheduleRenderLatest(); }

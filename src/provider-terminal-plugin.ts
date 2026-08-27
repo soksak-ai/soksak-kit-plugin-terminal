@@ -26,9 +26,11 @@ export interface ViewContext extends PaneSetContext {
   viewId?: string | null;
   paneId?: string | null;
   restore?: { cwd: string | null; state: unknown } | null;
-  // What the host shows of this view. A view nobody can see is not painted for.
-  presentation?(): { visible: boolean };
-  onPresentationChange?(listener: (presentation: { visible: boolean }) => void): () => void;
+  // What the host shows of this view: whether it is painted, and how much the
+  // focus lighting takes off it. A surface renderer applies dim to its own
+  // alpha because the document veil cannot darken a native layer above it.
+  presentation?(): { visible: boolean; dim?: number };
+  onPresentationChange?(listener: (presentation: { visible: boolean; dim?: number }) => void): () => void;
 }
 
 export interface ProviderTerminalPluginHost extends PaneSetHost {
@@ -235,15 +237,19 @@ export function activateProviderTerminalPlugin(
         viewId, restore: context.restore?.state, restoreCwd: context.restore?.cwd ?? null,
         layout: config.layout ?? "workbench", events: host.events,
       });
-      const shownEverywhere = (visible: boolean) => {
-        for (const pane of set.list()) pane.setShown(visible);
+      const presentEverywhere = (visible: boolean, dim: number) => {
+        for (const pane of set.list()) pane.setShown(visible, dim);
       };
       // A view the host is not showing is a view nothing has to be painted for. Its panes keep their
-      // sessions and their output, and they ask for a frame again when the view is shown.
+      // sessions and their output, and they ask for a frame again when the view is shown. The dim
+      // rides alongside: focus lighting changes it without changing what is painted.
       const stopWatchingPresentation = context.onPresentationChange?.((presentation) => {
-        shownEverywhere(presentation.visible);
+        presentEverywhere(presentation.visible, presentation.dim ?? 0);
       }) ?? null;
-      if (context.presentation) shownEverywhere(context.presentation().visible);
+      if (context.presentation) {
+        const initial = context.presentation();
+        presentEverywhere(initial.visible, initial.dim ?? 0);
+      }
       views.set(viewId, { viewId, container, set, workbench, stopWatchingPresentation });
     },
     unmount(container: HTMLElement) {
