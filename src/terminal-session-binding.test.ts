@@ -77,14 +77,19 @@ describe("shared terminal session binding", () => {
       stream: vi.fn(),
     };
     let opens = 0;
+    const operations: string[] = [];
     const binding = createTerminalSessionBinding({
       windowLabel: () => "window-a",
       sidecar: { open: async () => (++opens === 1 ? first : second) },
-    }, { ptySidecarId: "pty", terminalSidecarId: "recovery" });
+    }, {
+      ptySidecarId: "pty", terminalSidecarId: "recovery",
+      onOperation: (operation) => { operations.push(operation); },
+    });
 
     await expect(binding.recoveryRequest({ op: "status" })).rejects.toThrow("recovery sidecar ended");
     await expect(binding.recoveryRequest({ op: "status" })).resolves.toMatchObject({ ok: true });
     expect(opens).toBe(2);
+    expect(operations).toEqual(["opening-recovery", "ready", "opening-recovery", "ready"]);
   });
 
   it("reopens a PTY sidecar after the previous channel fails", async () => {
