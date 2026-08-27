@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPaneSession } from "./pane-session";
+import { createPaneSession, defaultTerminalPresenterFactory } from "./pane-session";
 import type { ProviderFrameRun, ProviderFrame } from "./provider-frame-presenter";
 import type { TerminalSessionBinding } from "./terminal-session-binding";
 
@@ -151,6 +151,34 @@ describe("pane session", () => {
     emit(1, new Uint8Array([2]));
     await vi.waitFor(() => expect(pane.renderedOutputSequence).toBe(2));
     expect(recovery.filter((request) => request.op === "frame").at(-1)).toMatchObject({ offset: 0, afterSequence: 2 });
+  });
+
+  it("routes a presenter's viewport request through the frame authority", async () => {
+    let requestViewport: ((offset: number) => void) | undefined;
+    const { binding, recovery, emit } = fakeBinding(() => {
+      const request = recovery.at(-1)!;
+      return {
+        ok: true,
+        data: {
+          outputSequence: Number(request.afterSequence ?? 1),
+          offset: Number(request.offset ?? 0), historySize: 100, ...frameOf(["ab"]),
+        },
+      };
+    });
+    const { pane } = mount(binding, {
+      presenterFactory(root, send, options) {
+        requestViewport = (options as typeof options & { requestViewport?: (offset: number) => void }).requestViewport;
+        return defaultTerminalPresenterFactory(root, send, options);
+      },
+    });
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    emit(1, new Uint8Array([1]));
+    await vi.waitFor(() => expect(pane.historySize).toBe(100));
+
+    expect(requestViewport).toBeTypeOf("function");
+    requestViewport!(30);
+    await vi.waitFor(() => expect(pane.offset).toBe(30));
+    expect(recovery.filter((request) => request.op === "frame").at(-1)).toMatchObject({ offset: 30 });
   });
 
   it("owns one suffixed restore-status notice per pane", async () => {
