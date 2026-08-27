@@ -92,11 +92,11 @@ test("Makefile packs and publishes with pnpm from command-line OUT and REGISTRY"
   assert.doesNotMatch(makefile, /PUBLISH_FLAGS/);
   assert.equal(
     makeVariable("registry_flags"),
-    "--@soksak:registry=$(REGISTRY) --@soksak-ai:registry=$(REGISTRY) --config.minimum-release-age=0",
+    "--@soksak:registry=$(REGISTRY) --config.minimum-release-age=0",
   );
   assert.equal(
     makeVariable("publish_flags"),
-    '--registry "$(REGISTRY)" --@soksak:registry="$(REGISTRY)" --@soksak-ai:registry="$(REGISTRY)" --no-git-checks',
+    '--registry "$(REGISTRY)" --@soksak:registry="$(REGISTRY)" --no-git-checks',
   );
   assert.match(makefile, /^prepare: guard preflight$/m);
   assert.match(makefile, /pnpm install --frozen-lockfile \$\(if \$\(findstring command line,\$\(origin REGISTRY\)\),\$\(registry_flags\)\)/);
@@ -123,6 +123,12 @@ test("Makefile packs and publishes with pnpm from command-line OUT and REGISTRY"
   refused(run(["publish", "OUT=/nonexistent/out"], { REGISTRY: "http://127.0.0.1:4873" }), /REGISTRY.*environment/);
   refused(run(["prepare"], { REGISTRY: "http://127.0.0.1:4873" }), /REGISTRY.*environment/);
   refused(run(["verify"], { OUT: "/nonexistent/out" }), /OUT.*environment/);
+});
+
+test("the package configures only the npm scope it consumes", () => {
+  for (const name of ["Makefile", "README.md", "README.ko.md", "package.json", "pnpm-lock.yaml"]) {
+    assert.doesNotMatch(readFileSync(join(root, name), "utf8"), /@soksak-ai/);
+  }
 });
 
 test("Makefile requires REGISTRY on the command line because the package depends on @soksak", () => {
