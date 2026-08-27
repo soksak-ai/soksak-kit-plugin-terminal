@@ -275,10 +275,14 @@ export function createTerminalSessionBinding(
       const command = commands[operation];
       if (!command) throw new Error(`unknown terminal recovery operation ${operation}`);
       const { op: _op, ...payload } = value;
-      const channel = await recovery();
-      const response = await sendRecovery(channel, request(command, { ...payload, window: host.windowLabel() }));
-      if (response.ok !== true) return { ok: false, code: (response.result as { code?: string })?.code ?? "FAILED", message: response.error ?? "recovery request failed" };
-      return { ok: true, code: "OK", data: answer(response) };
+      try {
+        const channel = await recovery();
+        const response = await sendRecovery(channel, request(command, { ...payload, window: host.windowLabel() }));
+        if (response.ok !== true) return { ok: false, code: (response.result as { code?: string })?.code ?? "FAILED", message: response.error ?? "recovery request failed" };
+        return { ok: true, code: "OK", data: answer(response) };
+      } finally {
+        options.onOperation?.("ready");
+      }
     },
     async diagnostics() {
       const [ptyStatus, recoveryStatus] = await Promise.all([
