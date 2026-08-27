@@ -257,7 +257,7 @@ describe("a byte-delivery renderer", () => {
   it("acknowledges capture preparation only while shown", async () => {
     const prepareCapture = vi.fn(async () => {});
     const { binding } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
-    const { pane } = mount(binding, {
+    const { pane, root } = mount(binding, {
       config: {
         pluginId: "plugin", engineId: "vt100",
         renderer: {
@@ -272,16 +272,25 @@ describe("a byte-delivery renderer", () => {
       },
     });
     const waits: Promise<void>[] = [];
-    const prepare = () => window.dispatchEvent(new CustomEvent("soksak:capture-prepare", {
+    const prepare = (scope: HTMLElement | Window) => scope.dispatchEvent(new CustomEvent("soksak:capture-prepare", {
       detail: { waitUntil: (promise: Promise<void>) => { waits.push(promise); } },
+      bubbles: true,
     }));
 
-    prepare();
+    const unrelated = document.createElement("div");
+    document.body.append(unrelated);
+    prepare(unrelated);
+    expect(prepareCapture).not.toHaveBeenCalled();
+
+    const owner = document.createElement("div");
+    owner.append(root);
+    document.body.append(owner);
+    prepare(owner);
     await Promise.all(waits.splice(0));
     expect(prepareCapture).toHaveBeenCalledOnce();
 
     pane.setShown(false);
-    prepare();
+    prepare(owner);
     expect(prepareCapture).toHaveBeenCalledOnce();
   });
 });
