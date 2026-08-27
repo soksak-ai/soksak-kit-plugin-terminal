@@ -61,6 +61,13 @@ stale async mount cannot open or attach after it was stopped.
 
 ## Verification
 
+`.node-version` owns the Node version. `package.json#engines.node` and
+`package.json#devEngines.runtime` are aligned projections for package consumers and direct pnpm
+entrypoints. A local environment and GitHub Actions select that version before calling the same
+Make targets. A mismatched direct pnpm command fails before dependency resolution. pnpm also
+refuses to repair an out-of-date dependency tree before a script; `make prepare` is the only
+dependency-materialization entrypoint.
+
 The package depends on `@soksak/soksak-contract-plugin-terminal`, so every `make` invocation that
 installs requires `REGISTRY` on the command line, `https://registry.npmjs.org` included once the
 packages are published there. The Makefile reads the requirement from `package.json` and refuses

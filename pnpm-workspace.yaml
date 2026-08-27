@@ -1,2 +1,5 @@
 allowBuilds:
   esbuild: true
+engineStrict: true
+pmOnFail: error
+verifyDepsBeforeRun: error

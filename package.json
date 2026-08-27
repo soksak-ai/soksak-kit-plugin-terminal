@@ -5,6 +5,13 @@
     "node": "26.7.0"
   },
   "packageManager": "pnpm@11.22.0",
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "26.7.0",
+      "onFail": "error"
+    }
+  },
   "license": "MIT",
   "repository": {
     "type": "git",

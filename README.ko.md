@@ -53,6 +53,13 @@ transaction이 끝난 뒤에만 시작하며 중지된 비동기 mount는 이후
 
 ## 검증
 
+Node version은 `.node-version`이 소유합니다. `package.json#engines.node`와
+`package.json#devEngines.runtime`은 package consumer와 direct pnpm 진입점을 위한 일치된
+projection입니다. 로컬 환경과 GitHub Actions가 그 version을 선택한 뒤 같은 Make target을
+호출합니다. 잘못된 Node에서 direct pnpm을 호출하면 dependency 해석 전에 실패합니다. pnpm은
+script 실행 전에 어긋난 dependency tree를 몰래 복구하지도 않습니다. Dependency를
+materialize하는 유일한 진입점은 `make prepare`입니다.
+
 이 패키지는 `@soksak/soksak-contract-plugin-terminal`에 의존하므로 설치를 수행하는 모든 `make`
 호출은 명령줄 `REGISTRY`를 요구하며, 패키지가 `https://registry.npmjs.org`에 publish된 뒤에도
 같습니다. Makefile은 이 요구를 `package.json`에서 읽으며 `REGISTRY`가 없으면

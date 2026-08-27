@@ -221,7 +221,24 @@ test("direct pnpm entrypoints fail closed before dependency mutation", () => {
       env: { PATH: process.env.PATH, CI: "1", PNPM_DISABLE_SELF_UPDATE_CHECK: "1" },
     });
     assert.notEqual(result.status, 0);
-    assert.match(result.stdout + result.stderr, /ERR_PNPM_BAD_RUNTIME_VERSION/);
+    const output = result.stdout + result.stderr;
+    assert.match(output, /This project requires Node[.]js 0[.]0[.]1[.] Your current Node[.]js is v\d+[.]\d+[.]\d+/);
+    assert.doesNotMatch(output, /Progress:|Packages:/);
+    assert.equal(existsSync(join(fixture, "node_modules")), false);
+    assert.equal(existsSync(join(fixture, "pnpm-lock.yaml")), false);
+
+    writeFileSync(join(fixture, "package.json"), JSON.stringify({
+      name: "soksak-dependency-policy-fixture", version: "0.0.0",
+      packageManager: pkg.packageManager,
+      devEngines: { runtime: { name: "node", version: process.versions.node, onFail: "error" } },
+      scripts: { probe: "node --version" }, dependencies: { "left-pad": "1.3.0" },
+    }));
+    const stale = spawnSync("pnpm", ["run", "probe"], {
+      cwd: fixture, encoding: "utf8",
+      env: { PATH: process.env.PATH, CI: "1", PNPM_DISABLE_SELF_UPDATE_CHECK: "1" },
+    });
+    assert.notEqual(stale.status, 0);
+    assert.match(stale.stdout + stale.stderr, /VERIFY_DEPS_BEFORE_RUN|Run "pnpm install"/);
     assert.equal(existsSync(join(fixture, "node_modules")), false);
     assert.equal(existsSync(join(fixture, "pnpm-lock.yaml")), false);
   } finally {
