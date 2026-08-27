@@ -44,6 +44,9 @@ A pane the layout hides, and every pane of a view the host is not showing, asks 
 sessions and their output are kept, and a frame is asked for again when the pane is shown. Measured
 2026-08-26: a hidden pane went from 195 frames in 4 seconds to none, and the window's rendering
 process from 92.7% to 32.3% of a core.
+Host presentation is the only visibility authority; DOM position and `IntersectionObserver` are
+not visibility signals. When shown again, a frame renderer requests the latest frame and a byte
+renderer redraws its retained buffer once.
 
 ## Stream sequence rule
 
