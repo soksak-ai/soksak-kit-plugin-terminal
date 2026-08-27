@@ -253,6 +253,37 @@ describe("a byte-delivery renderer", () => {
     expect(typeof (seen[0].options as { hostPixels: unknown }).hostPixels).toBe("function");
     void pane;
   });
+
+  it("acknowledges capture preparation only while shown", async () => {
+    const prepareCapture = vi.fn(async () => {});
+    const { binding } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    const { pane } = mount(binding, {
+      config: {
+        pluginId: "plugin", engineId: "vt100",
+        renderer: {
+          delivery: "bytes" as const, rendererId: "probe",
+          create: (root: HTMLElement) => ({
+            root, read: () => "", size: () => ({ cols: 80, rows: 24 }),
+            focus: () => true, dispose: () => {}, prepareCapture,
+            writeOutput: () => {}, applySnapshot: () => {}, onRendered: () => ({ dispose: () => {} }),
+            waitForText: async () => "",
+          } as never),
+        },
+      },
+    });
+    const waits: Promise<void>[] = [];
+    const prepare = () => window.dispatchEvent(new CustomEvent("soksak:capture-prepare", {
+      detail: { waitUntil: (promise: Promise<void>) => { waits.push(promise); } },
+    }));
+
+    prepare();
+    await Promise.all(waits.splice(0));
+    expect(prepareCapture).toHaveBeenCalledOnce();
+
+    pane.setShown(false);
+    prepare();
+    expect(prepareCapture).toHaveBeenCalledOnce();
+  });
 });
 
 // The scroll command answers the same way whichever renderer paints the pane: a renderer that owns
