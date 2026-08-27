@@ -372,6 +372,31 @@ describe("a pane that is not shown", () => {
     pane.setShown(true);
     await vi.waitFor(() => expect(recovery.filter((r) => r.op === "frame").length).toBeGreaterThan(asked));
   });
+
+  it("refreshes a byte renderer when it is shown again", async () => {
+    const refresh = vi.fn();
+    const { binding } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    const { pane } = mount(binding, {
+      config: {
+        pluginId: "plugin", engineId: "vt100",
+        renderer: {
+          delivery: "bytes" as const, rendererId: "probe",
+          create: (root: HTMLElement) => ({
+            root, read: () => "", size: () => ({ cols: 80, rows: 24 }),
+            focus: () => true, refresh, dispose: () => {},
+            writeOutput: () => {}, applySnapshot: () => {}, onRendered: () => ({ dispose: () => {} }),
+            waitForText: async () => "",
+          } as never),
+        },
+      },
+    });
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+
+    pane.setShown(false);
+    pane.setShown(true);
+
+    expect(refresh).toHaveBeenCalledOnce();
+  });
 });
 
 // A terminal pane is where a shell runs. An archive is what the last one left on screen, and the
