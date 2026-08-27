@@ -692,3 +692,109 @@ describe("a pane whose engine missed output", () => {
     });
   });
 });
+
+// A surface renderer draws outside the webview: the sidecar paints and the app composes. The pane
+// keeps the split, the restore state and the commands, and it opens no session, polls no frame and
+// writes no byte itself — every one of those is the surface owner's.
+describe("surface delivery", () => {
+  function surfacePresenter(root: HTMLElement) {
+    const sent: string[] = [];
+    const state = { offset: 0, historySize: 100, disposed: false, rendered: 42 };
+    const presenter = {
+      root,
+      size: () => ({ cols: 80, rows: 24 }),
+      read: () => "surface",
+      waitForText: async () => "surface",
+      focus: () => true,
+      sendText: async (data: string) => { sent.push(data); },
+      renderedOutputSequence: () => state.rendered,
+      scrollState: () => ({ offset: state.offset, historySize: state.historySize }),
+      scrollLines: (lines: number) => {
+        state.offset = Math.max(0, Math.min(state.historySize, state.offset + lines));
+      },
+      scrollTo: (offset: number) => { state.offset = offset; },
+      refresh: () => {},
+      dispose: () => { state.disposed = true; },
+    };
+    return { presenter, sent, state };
+  }
+  const surfaceAdapter = () => {
+    let last: ReturnType<typeof surfacePresenter> | null = null;
+    const adapter = {
+      delivery: "surface",
+      rendererId: "vision-surface",
+      rendererProfile: "native-surface",
+      create: (root: HTMLElement) => {
+        last = surfacePresenter(root);
+        return last.presenter;
+      },
+    } as never;
+    return { adapter, created: () => last! };
+  };
+  const surfaceMount = (adapter: never) => {
+    const { binding, recovery } = fakeBinding(() => ({ ok: true, data: {} }));
+    const view = mount(binding, { config: { pluginId: "plugin", engineId: "vt100", renderer: adapter } });
+    return { ...view, binding, recovery };
+  };
+
+  it("opens no session and polls no frame", async () => {
+    const { adapter } = surfaceAdapter();
+    const { pane, binding, recovery } = surfaceMount(adapter);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(binding.open).not.toHaveBeenCalled();
+    expect(recovery).toEqual([]);
+    expect(pane.status.current().rendererProfile).toBe("native-surface");
+    expect(pane.status.current().presentation.delivery).toBe("surface");
+    expect(pane.root.dataset.terminalOperation).toBe("ready");
+  });
+
+  it("routes input through the presenter and never the pty", async () => {
+    const { adapter, created } = surfaceAdapter();
+    const { pane, binding } = surfaceMount(adapter);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    await pane.write("ls\r");
+    pane.sendInput("x");
+    await vi.waitFor(() => expect(created().sent).toEqual(["ls\r", "x"]));
+    expect(binding.write).not.toHaveBeenCalled();
+  });
+
+  it("reports the presenter's rendered sequence and scroll state", async () => {
+    const { adapter, created } = surfaceAdapter();
+    const { pane } = surfaceMount(adapter);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    expect(pane.renderedOutputSequence).toBe(42);
+    const moved = await pane.scroll({ lines: 10 });
+    expect(moved).toEqual({ pane: "tab-a.2", offset: 10, historySize: 100 });
+    expect(created().state.offset).toBe(10);
+  });
+
+  it("refuses a surface renderer with no input path by name", () => {
+    const { adapter } = surfaceAdapter();
+    const broken = {
+      ...(adapter as Record<string, unknown>),
+      create: (root: HTMLElement) => {
+        const { presenter } = surfacePresenter(root);
+        return { ...presenter, sendText: undefined };
+      },
+    } as never;
+    const root = document.createElement("div");
+    document.body.append(root);
+    expect(() => createPaneSession({
+      key: "tab-a.2", viewId: "tab-a", engineId: "vt100",
+      binding: fakeBinding(() => ({ ok: true })).binding, root, nodeSuffix: "2",
+      config: { pluginId: "plugin", engineId: "vt100", renderer: broken },
+      observe: () => {}, publish: () => {},
+    })).toThrow(/sendText/);
+  });
+
+  it("stops without touching a pty session", async () => {
+    const { adapter, created } = surfaceAdapter();
+    const { pane, binding } = surfaceMount(adapter);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    await pane.stop("close");
+    expect(binding.close).not.toHaveBeenCalled();
+    expect(binding.detach).not.toHaveBeenCalled();
+    expect(created().state.disposed).toBe(true);
+  });
+});

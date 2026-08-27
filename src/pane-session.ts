@@ -1,4 +1,4 @@
-import type { TerminalPluginPublicStatus } from "@soksak/soksak-contract-plugin-terminal";
+import type { TerminalPluginPublicStatus, TerminalPresentationStatus } from "@soksak/soksak-contract-plugin-terminal";
 import { createProviderFramePresenter, type ProviderFrame } from "./provider-frame-presenter";
 import type { TerminalSessionBinding } from "./terminal-session-binding";
 import { createBoundedOutputTail } from "./bounded-output-tail";
@@ -19,6 +19,10 @@ export interface TerminalPresenter {
   applySnapshot?(snapshot: Record<string, unknown>, archived: boolean): Promise<void> | void;
   writeOutput?(bytes: Uint8Array): Promise<void>;
   onRendered?(callback: (durationMs: number) => void): { dispose(): void };
+  // A surface renderer delivers outside the webview: input rides sendText to the surface owner,
+  // and the rendered sequence is read back rather than counted from applied frames.
+  sendText?(data: string): Promise<void>;
+  renderedOutputSequence?(): number | null;
   read(lines?: number): string;
   selection?(): string;
   compose?(updates: string[], data: string): number;
@@ -36,7 +40,7 @@ export interface TerminalPresenter {
 }
 
 export interface TerminalRendererAdapter {
-  delivery: "frames" | "bytes";
+  delivery: "frames" | "bytes" | "surface";
   rendererId: string;
   rendererProfile?: "web" | "native-surface";
   // A renderer mounts inside one pane: options name the pane's nodes and its box.
@@ -118,6 +122,15 @@ const FRAME_TIMEOUT_MS = 2000;
 const TAIL_BYTES = 4096;
 const CWD_REPORT = /\x1b\]7;[^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
+// The presentation status names its delivery axis. Contract 0.0.8 spells "bytes" | "frame"; the
+// runtime schema types presentation as an object, and contract 0.0.9 widens the union with
+// "surface". Until the pin moves, the value crosses on this one assertion and nowhere else.
+export function rendererDelivery(renderer?: TerminalRendererAdapter): TerminalPresentationStatus["delivery"] {
+  const delivery = renderer?.delivery === "bytes" ? "bytes"
+    : renderer?.delivery === "surface" ? "surface" : "frame";
+  return delivery as TerminalPresentationStatus["delivery"];
+}
+
 export const defaultTerminalPresenterFactory: TerminalPresenterFactory = (root, send, options) => {
   const framed = createProviderFramePresenter(root, send, options);
   return { ...framed, renderFrame: (frame) => framed.render(frame) };
@@ -129,6 +142,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   const document = root.ownerDocument;
   const hostPixels = input.hostPixels ?? (() => ({ width: root.clientWidth, height: root.clientHeight }));
   const bytesDelivery = config.renderer?.delivery === "bytes";
+  const surfaceDelivery = config.renderer?.delivery === "surface";
   let session = 0;
   let stopped = false;
   let output: { dispose(): void } | undefined;
@@ -165,6 +179,22 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       presentation.markInputAccepted();
       status?.refresh();
       for (const listener of inputListeners) listener(text);
+    }
+    // A surface pane has no pty behind this process: input rides the presenter to the surface
+    // owner, and that owner is the only pty writer.
+    if (surfaceDelivery) {
+      const result = writeQueue.then(() => presenter.sendText!(text)).then(() => {
+        presentation.markPtyWrite();
+        status.refresh();
+      });
+      writeQueue = result.catch((error) => {
+        if (stopped) return;
+        status?.set("blocked", {
+          failure: { code: "INPUT_WRITE_FAILED", message: String(error) },
+          fidelity: "unavailable",
+        });
+      });
+      return result;
     }
     // Input the pane cannot deliver is not input that quietly disappears. A pane with nothing behind
     // it says so and starts a session again; a pane that is still starting keeps its silence.
@@ -220,11 +250,14 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   if (!root.style.position) root.style.position = "relative";
   root.append(notice);
   presentation = createTerminalPresentationStatus(
-    root, bytesDelivery ? "bytes" : "frame",
+    root, rendererDelivery(config.renderer),
     () => readTerminalTheme(document.documentElement), now, nodeSuffix,
   );
   if (bytesDelivery && (!presenter.writeOutput || !presenter.applySnapshot || !presenter.onRendered)) {
     throw new Error("byte renderer requires parser and rendered-frame completion contracts");
+  }
+  if (surfaceDelivery && !presenter.sendText) {
+    throw new Error("surface renderer requires a sendText input path");
   }
   const terminalSize = () => {
     presenter.fit?.();
@@ -633,6 +666,15 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       });
   };
   const start = async () => {
+    if (surfaceDelivery) {
+      // The surface owner runs the session; the pane is live from the moment it is mounted.
+      writable = true;
+      root.dataset.terminalOperation = "ready";
+      presentation.markReady();
+      status.refresh();
+      status.set("live", { recoveryOutcome: "fresh", fidelity: "complete" });
+      return;
+    }
     status.set("preparing-recovery");
     root.dataset.terminalOperation = "checking-live";
     const alive = await binding.paneAlive(key);
@@ -702,7 +744,9 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     get session() { return session; },
     get writable() { return writable; },
     get requestedSize() { return requestedSize; },
-    get renderedOutputSequence() { return renderedSequence; },
+    get renderedOutputSequence() {
+      return surfaceDelivery ? presenter.renderedOutputSequence?.() ?? null : renderedSequence;
+    },
     get offset() { return offset; },
     get historySize() { return historySize; },
     get lastOutputAtUnixMs() { return lastOutputAt; },
@@ -779,7 +823,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       if (shown === next) return;
       shown = next;
       if (!shown) return;
-      if (bytesDelivery) presenter.refresh?.();
+      if (bytesDelivery || surfaceDelivery) presenter.refresh?.();
       else { frameForced = true; scheduleRenderLatest(); }
     },
         requestResize,

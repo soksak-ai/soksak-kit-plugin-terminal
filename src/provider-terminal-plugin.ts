@@ -9,6 +9,7 @@ import {
 } from "@soksak/soksak-contract-plugin-terminal";
 import { createPaneSet, type PaneSet, type PaneSetContext, type PaneSetHost } from "./pane-set";
 import type { PaneSession, TerminalPresenter, TerminalPresenterFactory, TerminalRendererAdapter } from "./pane-session";
+import { rendererDelivery } from "./pane-session";
 import { paneStopBarriers } from "./pane-stop-barriers";
 import { createTerminalSessionBinding, type TerminalSessionBinding } from "./terminal-session-binding";
 import { closedTerminalPresentation } from "./terminal-presentation-status";
@@ -280,7 +281,7 @@ export function activateProviderTerminalPlugin(
     failure: null, hostPixels: { width: 0, height: 0 }, requested: null, pty: null,
     recovery: null, rendered: null, operation: "closed",
     presentation: closedTerminalPresentation(
-      config.renderer?.delivery === "bytes" ? "bytes" : "frame",
+      rendererDelivery(config.renderer),
       readTerminalTheme(document.documentElement),
     ),
     view: null, pane: null, panes: [],
