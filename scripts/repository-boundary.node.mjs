@@ -167,6 +167,18 @@ test("README documents the Makefile release commands verbatim", () => {
   }
 });
 
+test("README states the local and Actions toolchain boundary", () => {
+  const english = readFileSync(join(root, "README.md"), "utf8");
+  const korean = readFileSync(join(root, "README.ko.md"), "utf8");
+  for (const text of [english, korean]) {
+    assert.match(text, /[.]node-version/);
+    assert.match(text, /devEngines[.]runtime/);
+    assert.match(text, /GitHub Actions/);
+    assert.match(text, /make prepare/);
+    assert.match(text, /direct pnpm/);
+  }
+});
+
 test("portable release includes the presentation status owner", () => {
   const releaseFiles = JSON.parse(readFileSync(join(root, "release-files.json"), "utf8"));
   assert.ok(releaseFiles.includes("src/terminal-presentation-status.ts"));
