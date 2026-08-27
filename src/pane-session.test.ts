@@ -561,6 +561,31 @@ describe("a pane whose mirror is gone", () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(sessions).toBe(spent);
   });
+
+  it("does not request another frame while the failed session detaches", async () => {
+    let missing = false;
+    let frameRequests = 0;
+    const { binding, emit } = fakeBinding(() => {
+      frameRequests += 1;
+      return missing
+        ? { ok: false, code: "NOT_FOUND", message: "no live terminal-state mirror for this key" }
+        : { ok: true, data: { outputSequence: 1, ...frameOf(["ab"]) } };
+    });
+    let releaseDetach!: () => void;
+    const detaching = new Promise<void>((resolve) => { releaseDetach = resolve; });
+    binding.detach = vi.fn(async () => detaching);
+    const { pane } = mount(binding);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    const before = frameRequests;
+
+    missing = true;
+    emit(1, new Uint8Array([1]));
+    await vi.waitFor(() => expect(binding.detach).toHaveBeenCalledOnce());
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(frameRequests).toBe(before + 1);
+    releaseDetach();
+  });
 });
 
 describe("a pane before its first frame", () => {
