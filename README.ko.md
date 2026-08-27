@@ -50,6 +50,9 @@ PTY 출력은 하나의 절대 source sequence로 정렬합니다. 스트림 연
 하나의 pane은 하나의 renderer generation만 소유합니다. unmount는 정확한 byte stream을 닫고
 Core close receipt를 기다린 뒤 PTY generation을 명시적으로 detach합니다. 교체 mount는 이
 transaction이 끝난 뒤에만 시작하며 중지된 비동기 mount는 이후 open/attach할 수 없습니다.
+Frame presenter는 `TerminalPresenterOptions.requestViewport`로 viewport를 요청합니다. Pane
+session이 범위를 제한하고 engine에 해당 offset frame을 요청합니다. Renderer private DOM
+event가 terminal history 이동을 소유하거나 조용히 흡수하지 않습니다.
 
 ## 검증
 

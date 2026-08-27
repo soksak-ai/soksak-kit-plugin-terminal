@@ -58,6 +58,9 @@ parser callback; a frame renderer uses the sequence returned atomically with the
 One pane owns one renderer generation. Unmount closes the exact byte stream, awaits the Core close
 receipt, explicitly detaches that PTY generation, and only then lets a replacement mount start. A
 stale async mount cannot open or attach after it was stopped.
+A frame presenter requests a viewport through `TerminalPresenterOptions.requestViewport`; the pane
+session clamps it and asks the engine for that offset. Renderer-private DOM events never own or
+silently absorb terminal history movement.
 
 ## Verification
 
