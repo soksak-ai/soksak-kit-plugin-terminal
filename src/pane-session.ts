@@ -26,6 +26,7 @@ export interface TerminalPresenter {
   focus(): boolean;
   prepareFocusTransfer?(): void;
   refresh?(): void;
+  prepareCapture?(): Promise<void>;
   // A renderer that owns its own scrollback answers where it is and moves on request. offset counts
   // rows back into history, as the terminal contract declares it.
   scrollState?(): { offset: number; historySize: number };
@@ -658,7 +659,16 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     frameRequest = null;
     await startFresh({ recoveryOutcome: restored ? "archived" : undefined });
   };
-  const capturePrepare = () => presenter.refresh?.();
+  const capturePrepare = (event: Event) => {
+    if (!shown) return;
+    const prepared = presenter.prepareCapture?.();
+    if (!prepared) {
+      presenter.refresh?.();
+      return;
+    }
+    const detail = (event as CustomEvent<{ waitUntil?: (promise: Promise<void>) => void }>).detail;
+    detail?.waitUntil?.(prepared);
+  };
   window.addEventListener("soksak:capture-prepare", capturePrepare);
 
   startTask = (input.readyToStart ?? Promise.resolve()).then(async () => {
