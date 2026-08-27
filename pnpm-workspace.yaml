@@ -3,3 +3,7 @@ allowBuilds:
 engineStrict: true
 pmOnFail: error
 verifyDepsBeforeRun: error
+# First-party packages ship through the local release train before any public registry holds
+# them; an age gate on our own scope queries a registry that never heard of the package.
+minimumReleaseAgeExclude:
+  - "@soksak/*"
