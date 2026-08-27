@@ -105,13 +105,13 @@ bytes in the registry are the release identity for consumers.
 `publish` runs `release`, then uploads that exact tarball:
 
 ```sh
-pnpm publish "<tarball>" --registry "$(REGISTRY)" --@soksak:registry="$(REGISTRY)" --@soksak-ai:registry="$(REGISTRY)" --no-git-checks
+pnpm publish "<tarball>" --registry "$(REGISTRY)" --@soksak:registry="$(REGISTRY)" --no-git-checks
 ```
 
-`prepare` installs both `@soksak` and `@soksak-ai` scopes from `REGISTRY` with the release-age
-delay disabled, so a version published to it moments ago resolves. A failed install exits with the
+`prepare` installs the consumed `@soksak` scope from `REGISTRY` with the release-age delay disabled,
+so a version published to it moments ago resolves. A failed install exits with the
 pnpm status. After a successful install `pnpm-workspace.yaml` must be unchanged; a change exits 65:
 
 ```sh
-pnpm install --frozen-lockfile --@soksak:registry=$(REGISTRY) --@soksak-ai:registry=$(REGISTRY) --config.minimum-release-age=0
+pnpm install --frozen-lockfile --@soksak:registry=$(REGISTRY) --config.minimum-release-age=0
 ```

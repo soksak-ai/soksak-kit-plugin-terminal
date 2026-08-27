@@ -97,14 +97,14 @@ gzip 바이트는 zlib 빌드마다 다르므로 tarball의 재현성은 압축�
 `publish`는 `release`를 실행한 뒤 바로 그 tarball을 업로드합니다.
 
 ```sh
-pnpm publish "<tarball>" --registry "$(REGISTRY)" --@soksak:registry="$(REGISTRY)" --@soksak-ai:registry="$(REGISTRY)" --no-git-checks
+pnpm publish "<tarball>" --registry "$(REGISTRY)" --@soksak:registry="$(REGISTRY)" --no-git-checks
 ```
 
-`prepare`는 `@soksak`과 `@soksak-ai` 두 scope를 `REGISTRY`에서 설치하며 release-age 지연을
-끄므로 방금 그 레지스트리에 publish한 버전도 해석됩니다. 설치가 실패하면 pnpm의 종료 상태로
+`prepare`는 실제 사용하는 `@soksak` scope를 `REGISTRY`에서 설치하며 release-age 지연을 끄므로
+방금 그 레지스트리에 publish한 버전도 해석됩니다. 설치가 실패하면 pnpm의 종료 상태로
 종료합니다. 설치가 성공한 뒤 `pnpm-workspace.yaml`은 변경되지 않아야 하며 변경되면 65로
 종료합니다.
 
 ```sh
-pnpm install --frozen-lockfile --@soksak:registry=$(REGISTRY) --@soksak-ai:registry=$(REGISTRY) --config.minimum-release-age=0
+pnpm install --frozen-lockfile --@soksak:registry=$(REGISTRY) --config.minimum-release-age=0
 ```
