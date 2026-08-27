@@ -82,6 +82,19 @@ export function createPaneSet(host: PaneSetHost, input: PaneSetInput): PaneSet {
   let disposed = false;
 
   const focused = () => (focusedKey === null ? undefined : panes.get(focusedKey));
+  const locale = host.locale?.() ?? "en";
+  const pluginLabel = locale.startsWith("ko") ? input.config.label?.ko : input.config.label?.en;
+  let kindItem: { dispose(): void } | undefined;
+  const placeKind = () => {
+    kindItem?.dispose();
+    kindItem = undefined;
+    const engineId = focused()?.engineId;
+    if (pluginLabel && engineId) {
+      kindItem = host.ui.statusBarItem?.({
+        id: `kind:${viewId}`, paneId: viewId, label: `${pluginLabel} · ${engineId}`,
+      });
+    }
+  };
   const mirror = (status: TerminalPluginPublicStatus) => {
     container.dataset.terminalPhase = status.phase;
     container.dataset.terminalRecovery = status.recoveryOutcome;
@@ -119,7 +132,8 @@ export function createPaneSet(host: PaneSetHost, input: PaneSetInput): PaneSet {
   const focusPane = (key: string): boolean => {
     const pane = panes.get(key);
     if (!pane) return false;
-    if (focusedKey !== key) {
+    const changed = focusedKey !== key;
+    if (changed) {
       focusedKey = key;
       // The host decoder follows the focused pane: replay its last cwd report so cwd is current.
       const report = pane.lastCwdReport();
@@ -127,6 +141,7 @@ export function createPaneSet(host: PaneSetHost, input: PaneSetInput): PaneSet {
     }
     mirror(pane.status.current());
     refreshTitle();
+    if (changed) placeKind();
     persist();
     return true;
   };
@@ -165,7 +180,7 @@ export function createPaneSet(host: PaneSetHost, input: PaneSetInput): PaneSet {
       focusedKey = null;
       const remaining = panes.keys().next().value;
       if (remaining) focusPane(remaining);
-      else persist();
+      else { placeKind(); persist(); }
     } else {
       persist();
     }
@@ -186,9 +201,7 @@ export function createPaneSet(host: PaneSetHost, input: PaneSetInput): PaneSet {
   if (host.ui.statusBarItem) {
     placeCwd(cwd);
     disposables.push({ dispose: () => cwdItem?.dispose() });
-    const locale = host.locale?.() ?? "en";
-    const label = locale.startsWith("ko") ? input.config.label?.ko : input.config.label?.en;
-    if (label) disposables.push(host.ui.statusBarItem({ id: `kind:${viewId}`, paneId: viewId, label }));
+    disposables.push({ dispose: () => kindItem?.dispose() });
   }
   const watch = host.terminal?.onCwd?.(viewId, (value) => {
     cwd = value;
