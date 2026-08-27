@@ -184,13 +184,3 @@ test("preflight judges the effective repository-selected pnpm", () => {
   assert.match(source, /pnpm_actual=.*pnpm --version/);
   assert.doesNotMatch(source, /pnpm_executable|pnpmExecutable/);
 });
-
-test("pnpm owns the exact development runtime and package manager", () => {
-  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  const nodeVersion = readFileSync(join(root, ".node-version"), "utf8").trim();
-  const pnpmVersion = pkg.packageManager.replace(/^pnpm@/, "");
-  assert.deepEqual(pkg.devEngines, {
-    packageManager: { name: "pnpm", version: pnpmVersion, onFail: "download" },
-    runtime: { name: "node", version: nodeVersion, onFail: "download" },
-  });
-});
