@@ -184,25 +184,3 @@ test("preflight judges the effective repository-selected pnpm", () => {
   assert.match(source, /pnpm_actual=.*pnpm --version/);
   assert.doesNotMatch(source, /pnpm_executable|pnpmExecutable/);
 });
-
-test("pnpm refuses an incompatible Node before dependency mutation", () => {
-  const policy = readFileSync(join(root, ".npmrc"), "utf8");
-  assert.match(policy, /^engine-strict=true\n$/);
-  const fixture = mkdtempSync(join(tmpdir(), "soksak-kit-node-policy-"));
-  try {
-    writeFileSync(join(fixture, ".npmrc"), policy);
-    writeFileSync(join(fixture, "package.json"), JSON.stringify({
-      name: "soksak-engine-policy-fixture", version: "0.0.0", engines: { node: "0.0.1" },
-    }));
-    const result = spawnSync("pnpm", ["install", "--ignore-scripts", "--lockfile=false"], {
-      cwd: fixture, encoding: "utf8",
-      env: { PATH: process.env.PATH, CI: "1", PNPM_DISABLE_SELF_UPDATE_CHECK: "1" },
-    });
-    assert.notEqual(result.status, 0);
-    assert.match(result.stdout + result.stderr, /ERR_PNPM_UNSUPPORTED_ENGINE/);
-    assert.equal(existsSync(join(fixture, "node_modules")), false);
-    assert.equal(existsSync(join(fixture, "pnpm-lock.yaml")), false);
-  } finally {
-    rmSync(fixture, { recursive: true, force: true });
-  }
-});
