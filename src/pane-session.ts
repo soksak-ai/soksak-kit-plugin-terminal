@@ -356,7 +356,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   let restartsWithoutProgress = 0;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   const scheduleRenderLatest = () => {
-    if (frameRequest !== null || renderingTask || stopped || !shown || (!frameForced && !outputAhead())) return;
+    if (frameRequest !== null || renderingTask || stopped || !session || !shown || (!frameForced && !outputAhead())) return;
     frameRequest = setTimeout(() => {
       frameRequest = null;
       void renderLatest().catch(reportFrameFailure);
@@ -364,7 +364,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   };
   const renderLatest = (): Promise<void> => {
     if (renderingTask) return renderingTask;
-    if (stopped || bytesDelivery || (!frameForced && !outputAhead())) return Promise.resolve();
+    if (stopped || bytesDelivery || !session || (!frameForced && !outputAhead())) return Promise.resolve();
     const forced = frameForced;
     frameForced = false;
     const sequence = requestedSequence;
