@@ -378,7 +378,7 @@ describe("provider-backed terminal plugin", () => {
     view!.mount(root, { viewId: "pane" });
     expect(items).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "cwd:pane", label: "/one" }),
-      expect.objectContaining({ id: "kind:pane", label: "Terminal" }),
+      expect.objectContaining({ id: "kind:pane", label: "Terminal · frame" }),
     ]));
     expect(items.some((item) => item.id.includes("pane."))).toBe(false);
     cwdChanged!("/two");
