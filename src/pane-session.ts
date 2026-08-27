@@ -660,6 +660,8 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     await startFresh({ recoveryOutcome: restored ? "archived" : undefined });
   };
   const capturePrepare = (event: Event) => {
+    const scope = event.target;
+    if (scope instanceof HTMLElement && !scope.contains(root)) return;
     if (!shown) return;
     const prepared = presenter.prepareCapture?.();
     if (!prepared) {
