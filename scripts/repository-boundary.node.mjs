@@ -19,7 +19,7 @@ test("repository owns public metadata", () => {
     "git+https://github.com/soksak-ai/soksak-kit-plugin-terminal.git",
   );
   const kit = JSON.parse(readFileSync(join(root, "kit.json"), "utf8"));
-  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.60" });
+  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.61" });
   assert.equal(pkg.version, kit.version);
   assert.match(pkg.engines.node, /^\d+\.\d+\.\d+$/);
   assert.equal(nodeVersion, pkg.engines.node);
