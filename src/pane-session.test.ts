@@ -798,3 +798,19 @@ describe("surface delivery", () => {
     expect(created().state.disposed).toBe(true);
   });
 });
+
+describe("shown state and the presenter", () => {
+  it("hands every shown change to a presenter that listens", async () => {
+    const { binding } = fakeBinding(() => ({ ok: true, code: "OK", data: { full: true, cols: 4, rows: 1, cursor: [0, 0], cursorVisible: false, altActive: false, lines: [] } }));
+    const shownChanges: boolean[] = [];
+    const { pane } = mount(binding, {
+      presenterFactory: (root, send, options) => {
+        const presenter = defaultTerminalPresenterFactory(root, send, options);
+        return { ...presenter, setShown: (shown: boolean) => { shownChanges.push(shown); } };
+      },
+    });
+    pane.setShown(false);
+    pane.setShown(true);
+    expect(shownChanges).toEqual([false, true]);
+  });
+});

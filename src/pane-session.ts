@@ -30,6 +30,9 @@ export interface TerminalPresenter {
   focus(): boolean;
   prepareFocusTransfer?(): void;
   refresh?(): void;
+  // A surface renderer draws outside the document; the host's shown state must
+  // reach it or its layer stays painted over every overlay.
+  setShown?(shown: boolean): void;
   prepareCapture?(): Promise<void>;
   // A renderer that owns its own scrollback answers where it is and moves on request. offset counts
   // rows back into history, as the terminal contract declares it.
@@ -819,6 +822,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     setShown(next) {
       if (shown === next) return;
       shown = next;
+      presenter.setShown?.(next);
       if (!shown) return;
       if (bytesDelivery || surfaceDelivery) presenter.refresh?.();
       else { frameForced = true; scheduleRenderLatest(); }
