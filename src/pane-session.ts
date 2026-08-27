@@ -122,13 +122,10 @@ const FRAME_TIMEOUT_MS = 2000;
 const TAIL_BYTES = 4096;
 const CWD_REPORT = /\x1b\]7;[^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
-// The presentation status names its delivery axis. Contract 0.0.8 spells "bytes" | "frame"; the
-// runtime schema types presentation as an object, and contract 0.0.9 widens the union with
-// "surface". Until the pin moves, the value crosses on this one assertion and nowhere else.
+// The presentation status names its delivery axis; the contract union carries all three.
 export function rendererDelivery(renderer?: TerminalRendererAdapter): TerminalPresentationStatus["delivery"] {
-  const delivery = renderer?.delivery === "bytes" ? "bytes"
+  return renderer?.delivery === "bytes" ? "bytes"
     : renderer?.delivery === "surface" ? "surface" : "frame";
-  return delivery as TerminalPresentationStatus["delivery"];
 }
 
 export const defaultTerminalPresenterFactory: TerminalPresenterFactory = (root, send, options) => {
