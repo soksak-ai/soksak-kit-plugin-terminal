@@ -45,6 +45,7 @@ export interface TerminalRendererAdapter {
 export interface TerminalPresenterOptions {
   nodeSuffix: string | null;
   hostPixels(): { width: number; height: number };
+  requestViewport(offset: number): void;
 }
 export type TerminalPresenterFactory = (
   root: HTMLElement, send: (text: string) => void, options: TerminalPresenterOptions,
@@ -196,9 +197,14 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     return result;
   };
   const send = (text: string) => { void writeToPty(text, true).catch(() => {}); };
+  let viewportRequest: ((offset: number) => void) | null = null;
+  const presenterOptions = {
+    nodeSuffix, hostPixels,
+    requestViewport: (next: number) => viewportRequest?.(next),
+  };
   const presenter: TerminalPresenter = config.renderer
-    ? config.renderer.create(root, key, send, { nodeSuffix, hostPixels })
-    : (input.presenterFactory ?? config.presenter ?? defaultTerminalPresenterFactory)(root, send, { nodeSuffix, hostPixels });
+    ? config.renderer.create(root, key, send, presenterOptions)
+    : (input.presenterFactory ?? config.presenter ?? defaultTerminalPresenterFactory)(root, send, presenterOptions);
   // The pane owns the one notice inside it. It reads the failure the status carries and takes no
   // pointer events, so the terminal beneath keeps the mouse.
   const notice = document.createElement("div");
@@ -378,6 +384,13 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       scheduleRenderLatest();
     });
     return renderingTask;
+  };
+  viewportRequest = (next) => {
+    const target = Math.max(0, Math.min(historySize, Math.floor(next)));
+    if (target === offset) return;
+    offset = target;
+    frameForced = true;
+    scheduleRenderLatest();
   };
   let requestResize = () => {};
   const resizeSession = async () => {

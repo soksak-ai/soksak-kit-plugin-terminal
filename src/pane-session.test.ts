@@ -177,8 +177,10 @@ describe("pane session", () => {
 
     expect(requestViewport).toBeTypeOf("function");
     requestViewport!(30);
-    await vi.waitFor(() => expect(pane.offset).toBe(30));
-    expect(recovery.filter((request) => request.op === "frame").at(-1)).toMatchObject({ offset: 30 });
+    await vi.waitFor(() => {
+      expect(recovery.filter((request) => request.op === "frame").at(-1)).toMatchObject({ offset: 30 });
+    });
+    expect(pane.offset).toBe(30);
   });
 
   it("owns one suffixed restore-status notice per pane", async () => {
