@@ -201,8 +201,9 @@ export function createTerminalSessionBinding(
         paneId, cols, rows, shell, windowLabel: host.windowLabel(),
         ...(observerToken ? { observerToken } : {}),
         ...(openOptions?.cwd ? { cwd: openOptions.cwd } : {}),
-        // The PTY contract carries the environment as [name, value] pairs.
-        ...(openOptions?.env ? { env: Object.entries(openOptions.env) } : {}),
+        // The PTY contract reads an object as session variables added on top of the daemon's own
+        // environment. An array would be the whole environment and would drop PATH and HOME.
+        ...(openOptions?.env ? { env: openOptions.env } : {}),
       })));
       const session = Number(opened.session);
       const leaseToken = replay === "none" ? undefined : replay.leaseToken;

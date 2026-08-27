@@ -778,7 +778,7 @@ describe("provider-backed terminal plugin", () => {
     expect(root.querySelector('[data-node="pane/2"]')).not.toBeNull();
     expect(root.querySelector('[data-node="gutter/1/right"]')).not.toBeNull();
     await vi.waitFor(() => expect(requests.filter((item) => item.command === "pty.open").map((item) => item.payload.paneId)).toEqual(["tab-a.1", "tab-a.2"]));
-    expect(requests.find((item) => item.command === "pty.open" && item.payload.paneId === "tab-a.1")!.payload).toMatchObject({ cwd: "/start", env: [["SOKSAK_CALLER_PANE", "tab-a.1"]] });
+    expect(requests.find((item) => item.command === "pty.open" && item.payload.paneId === "tab-a.1")!.payload).toMatchObject({ cwd: "/start", env: { SOKSAK_CALLER_PANE: "tab-a.1" } });
     const byView = await call("status", { view: "tab-a" });
     expect(byView).toMatchObject({ view: "tab-a", pane: "tab-a.2" });
     expect((byView.panes as Array<{ pane: string }>).map((pane) => pane.pane)).toEqual(["tab-a.1", "tab-a.2"]);

@@ -235,7 +235,7 @@ describe("shared terminal session binding", () => {
     await detaching;
     expect(order.slice(-2)).toEqual(["stream.close", "pty.detachRenderer"]);
   });
-  it("passes cwd and environment pairs to pty.open and routes bytes to the observe option", async () => {
+  it("passes cwd and session variables to pty.open and routes bytes to the observe option", async () => {
     const sent: Record<string, unknown>[] = [];
     let onBytes: ((bytes: Uint8Array) => void) | undefined;
     const channel: TerminalSidecarChannel = {
@@ -265,7 +265,7 @@ describe("shared terminal session binding", () => {
     onBytes!(new Uint8Array([65]));
 
     expect(sent.find((value) => value.command === "pty.open")).toMatchObject({
-      args: { request: { paneId: "tab-a.2", cwd: "/work", env: [["SOKSAK_CALLER_PANE", "tab-a.2"]] } },
+      args: { request: { paneId: "tab-a.2", cwd: "/work", env: { SOKSAK_CALLER_PANE: "tab-a.2" } } },
     });
     expect(observed).toEqual([["tab-a.2", [65]]]);
     expect(hostObserved).toEqual([]);
