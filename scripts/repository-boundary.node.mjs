@@ -184,3 +184,35 @@ test("preflight judges the effective repository-selected pnpm", () => {
   assert.match(source, /pnpm_actual=.*pnpm --version/);
   assert.doesNotMatch(source, /pnpm_executable|pnpmExecutable/);
 });
+
+test("direct pnpm entrypoints fail closed before dependency mutation", () => {
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const nodeVersion = readFileSync(join(root, ".node-version"), "utf8").trim();
+  assert.deepEqual(pkg.devEngines, {
+    runtime: { name: "node", version: nodeVersion, onFail: "error" },
+  });
+  const workspace = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8");
+  for (const rule of ["engineStrict: true", "pmOnFail: error", "verifyDepsBeforeRun: error"]) {
+    assert.match(workspace, new RegExp(`^${rule}$`, "m"));
+  }
+
+  const fixture = mkdtempSync(join(tmpdir(), "soksak-kit-toolchain-policy-"));
+  try {
+    writeFileSync(join(fixture, "package.json"), JSON.stringify({
+      name: "soksak-toolchain-policy-fixture", version: "0.0.0",
+      packageManager: pkg.packageManager,
+      devEngines: { runtime: { name: "node", version: "0.0.1", onFail: "error" } },
+    }));
+    writeFileSync(join(fixture, "pnpm-workspace.yaml"), workspace);
+    const result = spawnSync("pnpm", ["install"], {
+      cwd: fixture, encoding: "utf8",
+      env: { PATH: process.env.PATH, CI: "1", PNPM_DISABLE_SELF_UPDATE_CHECK: "1" },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout + result.stderr, /ERR_PNPM_BAD_RUNTIME_VERSION/);
+    assert.equal(existsSync(join(fixture, "node_modules")), false);
+    assert.equal(existsSync(join(fixture, "pnpm-lock.yaml")), false);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
