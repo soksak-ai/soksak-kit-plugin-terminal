@@ -184,3 +184,18 @@ test("preflight judges the effective repository-selected pnpm", () => {
   assert.match(source, /pnpm_actual=.*pnpm --version/);
   assert.doesNotMatch(source, /pnpm_executable|pnpmExecutable/);
 });
+
+test("the build runner selects the exact native toolchain and pnpm never repairs implicitly", () => {
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const nodeVersion = readFileSync(join(root, ".node-version"), "utf8").trim();
+  const pnpmVersion = pkg.packageManager.replace(/^pnpm@/, "");
+  assert.deepEqual(pkg.devEngines, {
+    packageManager: { name: "pnpm", version: pnpmVersion, onFail: "error" },
+    runtime: { name: "node", version: nodeVersion, onFail: "error" },
+  });
+  assert.match(readFileSync(join(root, "pnpm-workspace.yaml"), "utf8"), /^verifyDepsBeforeRun: error$/m);
+  assert.equal(existsSync(join(root, "scripts/build-toolchain-runner.mjs")), true);
+  assert.equal(makeVariable("toolchain"), "node scripts/build-toolchain-runner.mjs");
+  assert.match(makefile, /^preflight:\n\t@\$\(toolchain\) --check$/m);
+  assert.doesNotMatch(makefile, /^\t@.*\bpnpm\b/m);
+});
