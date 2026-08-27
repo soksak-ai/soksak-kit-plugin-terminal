@@ -1,6 +1,7 @@
 import type { TerminalPluginPublicStatus } from "@soksak/soksak-contract-plugin-terminal";
 import { createProviderFramePresenter, type ProviderFrame } from "./provider-frame-presenter";
 import type { TerminalSessionBinding } from "./terminal-session-binding";
+import { createBoundedOutputTail } from "./bounded-output-tail";
 import { createTerminalStatusController, type TerminalStatusController } from "./terminal-status-publication";
 import {
   createTerminalPresentationStatus, terminalNodeId, type TerminalPresentationStatusController,
@@ -149,7 +150,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   let offset = 0;
   let historySize = 0;
   let title: string | null = input.title ?? null;
-  let tail = new Uint8Array(0);
+  const tail = createBoundedOutputTail(TAIL_BYTES);
   const mountedAt = now();
   let lastOutputAt: number | null = null;
   const outputListeners = new Set<() => void>();
@@ -408,15 +409,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   // The pane shows its whole box from the moment it is mounted, whether or not a session ever
   // starts behind it.
   requestResize();
-  const keepTail = (chunk: Uint8Array) => {
-    if (chunk.length >= TAIL_BYTES) { tail = chunk.slice(chunk.length - TAIL_BYTES); return; }
-    const length = Math.min(TAIL_BYTES, tail.length + chunk.length);
-    const joined = new Uint8Array(length);
-    const kept = length - chunk.length;
-    joined.set(tail.subarray(tail.length - kept), 0);
-    joined.set(chunk, kept);
-    tail = joined;
-  };
+  const keepTail = (chunk: Uint8Array) => { tail.push(chunk); };
   const attach = (opened: number) => {
     // A pane is live when it has a session. A number that is not one is not a session, and writing
     // to it hands every keystroke to something nothing serves.
@@ -645,7 +638,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     renderedSequence = null;
     pendingOutput = [];
     pendingOutputSequence = 0;
-    tail = new Uint8Array();
+    tail.clear();
     lastOutputAt = null;
     frameForced = requestInitialFrame;
     if (frameRequest !== null) clearTimeout(frameRequest);
@@ -666,7 +659,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   });
 
   const lastCwdReport = (): Uint8Array | null => {
-    const text = new TextDecoder().decode(tail);
+    const text = new TextDecoder().decode(tail.snapshot());
     let last: string | null = null;
     for (const match of text.matchAll(CWD_REPORT)) last = match[0];
     return last === null ? null : new TextEncoder().encode(last);
