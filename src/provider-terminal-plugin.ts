@@ -36,6 +36,10 @@ export interface ViewContext extends PaneSetContext {
 export interface ProviderTerminalPluginHost extends PaneSetHost {
   events?: TerminalLayoutEvents & {
     on(event: "window.gone", callback: (payload: { windowLabel?: string }) => void): { dispose(): void };
+    on(event: "paths.dropped", callback: (payload: {
+      paneId: string | null;
+      grants: Array<{ id: string; kind: "file" | "image" }>;
+    }) => void): { dispose(): void };
   };
   ui: {
     registerView(id: string, provider: {
@@ -575,10 +579,7 @@ export function activateProviderTerminalPlugin(
     found.pane.root.dispatchEvent(new CustomEvent("soksak:terminal-clipboard-pasted", { bubbles: true, detail: result }));
     return result;
   }, "inject");
-  register("drop", scoped({
-    grants: { type: "array", required: true, description: { en: "Opaque host-issued file grants", ko: "host가 발급한 불투명 file grant" } },
-    mode: { type: "string", enum: ["path", "inline"], description: { en: "Path input or declared inline image", ko: "path 입력 또는 선언된 inline image" } },
-  }), async (params, context) => {
+  const handleDrop = async (params: Record<string, unknown>, context?: CommandContext) => {
     const found = target(params, context);
     const mode = params.mode === "inline" ? "inline" : "path";
     const tokens = Array.isArray(params.grants)
@@ -608,7 +609,20 @@ export function activateProviderTerminalPlugin(
       { bubbles: true, detail: { ...result, refused: tokens.length - accepted } },
     ));
     return result;
-  }, "inject");
+  };
+  register("drop", scoped({
+    grants: { type: "array", required: true, description: { en: "Opaque host-issued file grants", ko: "host가 발급한 불투명 file grant" } },
+    mode: { type: "string", enum: ["path", "inline"], description: { en: "Path input or declared inline image", ko: "path 입력 또는 선언된 inline image" } },
+  }), handleDrop, "inject");
+  const dropped = host.events?.on("paths.dropped", (payload) => {
+    if (!payload.paneId || payload.grants.length === 0) return;
+    void handleDrop({
+      view: payload.paneId,
+      grants: payload.grants.map((grant) => grant.id),
+      mode: "path",
+    }).catch(() => {});
+  });
+  if (dropped) subscriptions.push(dropped);
   register("input.compose", scoped({
     updates: { type: "array", required: true, description: { en: "Composition updates in order", ko: "순서대로의 조합 갱신" } },
     data: { type: "string", required: true, description: { en: "Committed text", ko: "확정 텍스트" } },
