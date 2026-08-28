@@ -51,7 +51,7 @@ test("package publishes by name and version", () => {
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   assert.equal("private" in pkg, false);
   assert.equal("publishConfig" in pkg, false);
-  assert.deepEqual(pkg.files, ["dist", "kit.json", "src", "!src/*.test.ts", "LICENSE", "README*"]);
+  assert.deepEqual(pkg.files, ["dist", "kit.json", "src", "!src/**/*.test.ts", "LICENSE", "README*"]);
   assert.deepEqual(pkg.exports, { ".": { types: "./src/index.ts", default: "./dist/index.js" } });
   for (const section of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
     for (const [name, spec] of Object.entries(pkg[section] ?? {})) {
