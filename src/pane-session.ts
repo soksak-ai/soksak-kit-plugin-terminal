@@ -384,6 +384,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   };
   const outputAhead = () => requestedSequence > (renderedSequence ?? -1);
   let shown = true;
+  let lastDim = 0;
   // Restarting a session is for one that went away while the pane was working. A pane that keeps
   // failing waits longer between tries, and never stops: what it is waiting for — a unit coming
   // back — is the thing that happens on its own.
@@ -820,9 +821,13 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
         return input.cwd ?? null;
       }
     },
-    setShown(next, dim = 0) {
+    setShown(next, dim) {
       // dim can change while shown does not (focus moving between panes); the
       // presenter is told every time so a surface renderer re-declares alpha.
+      // A caller that owns only pane visibility (the workbench) names no dim —
+      // the view's last dim stands. Never reset dim to clear by omission.
+      if (dim === undefined) dim = lastDim;
+      else lastDim = dim;
       presenter.setShown?.(next, dim);
       if (shown === next) return;
       shown = next;

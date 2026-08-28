@@ -813,4 +813,21 @@ describe("shown state and the presenter", () => {
     pane.setShown(true);
     expect(shownChanges).toEqual([false, true]);
   });
+
+  it("keeps the last dim when a shown update names none", async () => {
+    const { binding } = fakeBinding(() => ({ ok: true, code: "OK", data: { full: true, cols: 4, rows: 1, cursor: [0, 0], cursorVisible: false, altActive: false, lines: [] } }));
+    const calls: Array<[boolean, number | undefined]> = [];
+    const { pane } = mount(binding, {
+      presenterFactory: (root, send, options) => {
+        const presenter = defaultTerminalPresenterFactory(root, send, options);
+        return { ...presenter, setShown: (shown: boolean, dim?: number) => { calls.push([shown, dim]); } };
+      },
+    });
+    pane.setShown(true, 0.5);
+    // The workbench owns only pane visibility and names no dim — the view's
+    // dim must stand, never fall back to clear.
+    pane.setShown(true);
+    pane.setShown(false);
+    expect(calls).toEqual([[true, 0.5], [true, 0.5], [false, 0.5]]);
+  });
 });
