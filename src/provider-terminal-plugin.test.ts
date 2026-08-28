@@ -10,6 +10,7 @@ globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} 
 for (const [name, value] of Object.entries({
   fg: "#eeeeec", card: "#1e1e1e", acc: "#ffffff", fg3: "#555753",
 })) document.documentElement.style.setProperty(`--${name}`, value);
+document.documentElement.dataset.themeMode = "dark";
 
 const settledClose = () => ({ dispose() {}, settled: Promise.resolve() });
 type Handler = (params: Record<string, unknown>, context?: { pane: string }) => Promise<Record<string, unknown>> | Record<string, unknown>;

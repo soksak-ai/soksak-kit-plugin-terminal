@@ -6,6 +6,7 @@ import type { TerminalSessionBinding } from "./terminal-session-binding";
 for (const [name, value] of Object.entries({
   fg: "#eeeeec", card: "#1e1e1e", acc: "#ffffff", fg3: "#555753",
 })) document.documentElement.style.setProperty(`--${name}`, value);
+document.documentElement.dataset.themeMode = "dark";
 
 const frame = { cols: 2, rows: 1, cursor: [0, 0], cursorVisible: false, altActive: false, full: true, lines: [
   { y: 0, wrapped: false, runs: [{ text: "OK", fg: "default", bg: "default", attrs: 0, n: 2 }] },

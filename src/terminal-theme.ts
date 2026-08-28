@@ -3,6 +3,7 @@ import {
   resolveTerminalTheme,
   TERMINAL_ANSI_PALETTE,
   TERMINAL_THEME_CONTRACT,
+  TERMINAL_THEME_EVENT,
   type TerminalThemePalette,
   type TerminalThemeStatus,
 } from "@soksak/soksak-contract-plugin-terminal";
@@ -49,10 +50,14 @@ export function readTerminalTheme(root: HTMLElement): TerminalThemePalette {
 }
 
 export function readTerminalThemeStatus(root: HTMLElement): TerminalThemeStatus {
+  const mode = root.dataset.themeMode;
+  if (mode !== "light" && mode !== "dark") {
+    throw new Error("terminal host theme mode must be light or dark");
+  }
   const baseTheme = readTerminalTheme(root);
   const terminalOverrides = emptyTerminalThemeOverrides();
   return {
-    themeMode: "light",
+    themeMode: mode,
     baseTheme,
     terminalOverrides,
     effectiveTheme: resolveTerminalTheme(baseTheme, terminalOverrides),
@@ -60,12 +65,49 @@ export function readTerminalThemeStatus(root: HTMLElement): TerminalThemeStatus 
 }
 
 export function publishTerminalThemeStatus(
-  _root: HTMLElement,
-  _screen: HTMLElement | null,
-  _pane: string,
+  root: HTMLElement,
+  screen: HTMLElement | null,
+  pane: string,
   status: TerminalThemeStatus,
 ): TerminalThemeStatus {
-  return status;
+  if (status.themeMode !== "light" && status.themeMode !== "dark") {
+    throw new Error("terminal themeMode must be light or dark");
+  }
+  const effectiveTheme = resolveTerminalTheme(status.baseTheme, status.terminalOverrides);
+  if (JSON.stringify(effectiveTheme) !== JSON.stringify(status.effectiveTheme)) {
+    throw new Error("terminal effectiveTheme does not match baseTheme and terminalOverrides");
+  }
+  const value: TerminalThemeStatus = {
+    themeMode: status.themeMode,
+    baseTheme: { ...status.baseTheme, ansi: [...status.baseTheme.ansi] },
+    terminalOverrides: { ...status.terminalOverrides, ansi: [...status.terminalOverrides.ansi] },
+    effectiveTheme: { ...effectiveTheme, ansi: [...effectiveTheme.ansi] },
+  };
+  const targets = screen ? [root, screen] : [root];
+  for (const target of targets) {
+    target.dataset.themeMode = value.themeMode;
+    target.dataset.baseTheme = JSON.stringify(value.baseTheme);
+    target.dataset.terminalOverrides = JSON.stringify(value.terminalOverrides);
+    target.dataset.effectiveTheme = JSON.stringify(value.effectiveTheme);
+  }
+  if (screen) {
+    screen.style.color = value.effectiveTheme.foreground;
+    screen.style.backgroundColor = value.effectiveTheme.background;
+    screen.style.setProperty(TERMINAL_THEME_CONTRACT.properties.cursor, value.effectiveTheme.cursor);
+    screen.style.setProperty(TERMINAL_THEME_CONTRACT.properties.cursorAccent, value.effectiveTheme.cursorAccent);
+    screen.style.setProperty(
+      TERMINAL_THEME_CONTRACT.properties.selectionBackground,
+      value.effectiveTheme.selectionBackground,
+    );
+    value.effectiveTheme.ansi.forEach((color, index) => {
+      screen.style.setProperty(`${TERMINAL_THEME_CONTRACT.properties.ansiPrefix}${index}`, color);
+    });
+  }
+  root.dispatchEvent(new CustomEvent(TERMINAL_THEME_EVENT, {
+    bubbles: true,
+    detail: { ...value, pane },
+  }));
+  return value;
 }
 
 export function observeTerminalTheme(root: HTMLElement, onChange: () => void): () => void {

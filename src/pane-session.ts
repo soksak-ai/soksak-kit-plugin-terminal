@@ -1,4 +1,6 @@
-import type { TerminalPluginPublicStatus, TerminalPresentationStatus } from "@soksak/soksak-contract-plugin-terminal";
+import type {
+  TerminalPluginPublicStatus, TerminalPresentationStatus, TerminalThemeStatus,
+} from "@soksak/soksak-contract-plugin-terminal";
 import {
   createProviderFramePresenter,
   type ProviderFrame,
@@ -11,7 +13,7 @@ import {
   createTerminalPresentationStatus, terminalNodeId, type TerminalPresentationStatusController,
 } from "./terminal-presentation-status";
 import { createTerminalResizeWorker } from "./terminal-resize-worker";
-import { readTerminalThemeStatus } from "./terminal-theme";
+import { observeTerminalTheme, readTerminalThemeStatus } from "./terminal-theme";
 
 export interface TerminalPresenter {
   root: HTMLElement;
@@ -26,6 +28,8 @@ export interface TerminalPresenter {
   // Native presenters receive engine presentation state outside this process. This subscription
   // publishes that state through the same terminal status event without polling the presenter.
   onPresentationChanged?(callback: () => void): { dispose(): void };
+  themeStatus?(): TerminalThemeStatus;
+  setTheme?(status: TerminalThemeStatus): Promise<void> | void;
   // A surface renderer delivers outside the webview: input rides sendText to the surface owner,
   // and the rendered sequence is read back rather than counted from applied frames.
   sendText?(data: string): Promise<void>;
@@ -269,13 +273,14 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   root.append(dropTarget);
   presentation = createTerminalPresentationStatus(
     root, rendererDelivery(config.renderer),
-    () => readTerminalThemeStatus(document.documentElement), now, nodeSuffix,
+    () => presenter.themeStatus?.() ?? readTerminalThemeStatus(document.documentElement),
+    now, nodeSuffix, key,
   );
   if (bytesDelivery && (!presenter.writeOutput || !presenter.applySnapshot || !presenter.onRendered)) {
     throw new Error("byte renderer requires parser and rendered-frame completion contracts");
   }
-  if (surfaceDelivery && !presenter.sendText) {
-    throw new Error("surface renderer requires a sendText input path");
+  if (surfaceDelivery && (!presenter.sendText || !presenter.themeStatus || !presenter.setTheme)) {
+    throw new Error("surface renderer requires sendText, themeStatus and setTheme contracts");
   }
   const terminalSize = () => {
     presenter.fit?.();
@@ -327,6 +332,37 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   });
   const presenterPresentation = presenter.onPresentationChanged?.(() => {
     status.refresh();
+  });
+  const stopThemeObservation = observeTerminalTheme(document.documentElement, () => {
+    if (stopped) return;
+    let next: TerminalThemeStatus;
+    try {
+      next = readTerminalThemeStatus(document.documentElement);
+    } catch (error) {
+      status.set("blocked", {
+        failure: { code: "THEME_UPDATE_FAILED", message: String(error) },
+        fidelity: "unavailable",
+      });
+      return;
+    }
+    try {
+      const applying = presenter.setTheme?.(next);
+      if (applying) {
+        void applying.then(() => { if (!stopped) status.refresh(); }).catch((error) => {
+          if (!stopped) status.set("blocked", {
+            failure: { code: "THEME_UPDATE_FAILED", message: String(error) },
+            fidelity: "unavailable",
+          });
+        });
+      } else {
+        status.refresh();
+      }
+    } catch (error) {
+      status.set("blocked", {
+        failure: { code: "THEME_UPDATE_FAILED", message: String(error) },
+        fidelity: "unavailable",
+      });
+    }
   });
 
   const applyFrame = (value: unknown): boolean => {
@@ -873,6 +909,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       outputEnd?.dispose();
       presenterRendering?.dispose();
       presenterPresentation?.dispose();
+      stopThemeObservation();
       outputListeners.clear();
       inputListeners.clear();
       const attached = session;

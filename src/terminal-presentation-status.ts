@@ -3,6 +3,7 @@ import type {
   TerminalPresentationStatus,
   TerminalThemeStatus,
 } from "@soksak/soksak-contract-plugin-terminal";
+import { publishTerminalThemeStatus } from "./terminal-theme";
 
 let nextMountSequence = 0;
 
@@ -46,7 +47,7 @@ export function createTerminalPresentationStatus(
   theme: () => TerminalThemeStatus,
   now: () => number = Date.now,
   nodeSuffix: string | null = null,
-  _pane: string = "",
+  pane: string = "",
 ): TerminalPresentationStatusController {
   const mountedAtUnixMs = now();
   const mountSequence = ++nextMountSequence;
@@ -64,6 +65,9 @@ export function createTerminalPresentationStatus(
   let lastRenderDurationMs: number | null = null;
   let maxRenderDurationMs: number | null = null;
   let lastInputToPtyWriteMs: number | null = null;
+  let publishedTheme: TerminalThemeStatus | null = null;
+  let publishedThemeKey: string | null = null;
+  let publishedScreen: HTMLElement | null = null;
 
   const current = (): TerminalPresentationStatus => {
     const input = terminalNode(root, "terminal-input", nodeSuffix);
@@ -74,6 +78,13 @@ export function createTerminalPresentationStatus(
     const cursorShape = screen?.dataset.cursorShape;
     const cursorPhase = screen?.dataset.cursorAnimationPhase;
     const cursorInterval = Number(screen?.dataset.cursorAnimationIntervalMs ?? 0);
+    const nextTheme = theme();
+    const nextThemeKey = JSON.stringify(nextTheme);
+    if (publishedTheme === null || publishedThemeKey !== nextThemeKey || publishedScreen !== screen) {
+      publishedTheme = publishTerminalThemeStatus(root, screen, pane, nextTheme);
+      publishedThemeKey = JSON.stringify(publishedTheme);
+      publishedScreen = screen;
+    }
     return {
       delivery,
       mountSequence,
@@ -117,7 +128,7 @@ export function createTerminalPresentationStatus(
       lastRenderDurationMs,
       maxRenderDurationMs,
       lastInputToPtyWriteMs,
-      ...theme(),
+      ...publishedTheme,
     };
   };
   return {
