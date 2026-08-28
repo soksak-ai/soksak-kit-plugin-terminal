@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { resolveTerminalTheme } from "@soksak/soksak-contract-plugin-terminal";
 import { createPaneSession, defaultTerminalPresenterFactory } from "./pane-session";
 import type { ProviderFrameRun, ProviderFrame } from "./provider-frame-presenter";
 import type { TerminalSessionBinding } from "./terminal-session-binding";
+import { readTerminalThemeStatus } from "./terminal-theme";
 
 for (const [name, value] of Object.entries({
   fg: "#eeeeec", card: "#1e1e1e", acc: "#ffffff", fg3: "#555753",
 })) document.documentElement.style.setProperty(`--${name}`, value);
+document.documentElement.dataset.themeMode = "dark";
 
 const run = (text: string): ProviderFrameRun => ({ text, fg: "default", bg: "default", attrs: 0 });
 const frameOf = (rows: string[], full = true): ProviderFrame => ({
@@ -704,6 +707,7 @@ describe("surface delivery", () => {
     screen.dataset.node = "terminal-screen";
     root.append(screen);
     let presentationChanged: (() => void) | null = null;
+    let themeStatus = readTerminalThemeStatus(document.documentElement);
     const presenter = {
       root,
       size: () => ({ cols: 80, rows: 24 }),
@@ -721,10 +725,21 @@ describe("surface delivery", () => {
         presentationChanged = callback;
         return { dispose: () => { presentationChanged = null; } };
       },
+      themeStatus: () => themeStatus,
       refresh: () => {},
       dispose: () => { state.disposed = true; },
     };
-    return { presenter, sent, state, screen, presentationChanged: () => presentationChanged?.() };
+    return {
+      presenter, sent, state, screen, presentationChanged: () => presentationChanged?.(),
+      overrideForeground(foreground: string) {
+        const terminalOverrides = { ...themeStatus.terminalOverrides, foreground };
+        themeStatus = {
+          ...themeStatus,
+          terminalOverrides,
+          effectiveTheme: resolveTerminalTheme(themeStatus.baseTheme, terminalOverrides),
+        };
+      },
+    };
   }
   const surfaceAdapter = () => {
     let last: ReturnType<typeof surfacePresenter> | null = null;
@@ -789,10 +804,15 @@ describe("surface delivery", () => {
     const before = published.length;
     created().screen.dataset.cursorShape = "bar";
     created().screen.dataset.cursorBlinking = "true";
+    created().overrideForeground("#abcdef");
     created().presentationChanged();
     expect(published).toHaveLength(before + 1);
     expect(published.at(-1)).toMatchObject({
-      presentation: { cursorShape: "bar", cursorBlinking: true },
+      presentation: {
+        cursorShape: "bar", cursorBlinking: true,
+        terminalOverrides: { foreground: "#abcdef" },
+        effectiveTheme: { foreground: "#abcdef" },
+      },
     });
   });
 
