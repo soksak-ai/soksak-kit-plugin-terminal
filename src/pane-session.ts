@@ -23,6 +23,9 @@ export interface TerminalPresenter {
   applySnapshot?(snapshot: Record<string, unknown>, archived: boolean): Promise<void> | void;
   writeOutput?(bytes: Uint8Array): Promise<void>;
   onRendered?(callback: (durationMs: number) => void): { dispose(): void };
+  // Native presenters receive engine presentation state outside this process. This subscription
+  // publishes that state through the same terminal status event without polling the presenter.
+  onPresentationChanged?(callback: () => void): { dispose(): void };
   // A surface renderer delivers outside the webview: input rides sendText to the surface owner,
   // and the rendered sequence is read back rather than counted from applied frames.
   sendText?(data: string): Promise<void>;
@@ -320,6 +323,9 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   };
   const presenterRendering = presenter.onRendered?.((durationMs) => {
     presentation.markRendered(durationMs);
+    status.refresh();
+  });
+  const presenterPresentation = presenter.onPresentationChanged?.(() => {
     status.refresh();
   });
 
@@ -866,6 +872,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       output?.dispose();
       outputEnd?.dispose();
       presenterRendering?.dispose();
+      presenterPresentation?.dispose();
       outputListeners.clear();
       inputListeners.clear();
       const attached = session;
