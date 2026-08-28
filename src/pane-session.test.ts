@@ -708,6 +708,7 @@ describe("surface delivery", () => {
     root.append(screen);
     let presentationChanged: (() => void) | null = null;
     let themeStatus = readTerminalThemeStatus(document.documentElement);
+    const themeUpdates: typeof themeStatus[] = [];
     const presenter = {
       root,
       size: () => ({ cols: 80, rows: 24 }),
@@ -726,11 +727,16 @@ describe("surface delivery", () => {
         return { dispose: () => { presentationChanged = null; } };
       },
       themeStatus: () => themeStatus,
+      setTheme: (next: typeof themeStatus) => {
+        themeStatus = next;
+        themeUpdates.push(next);
+      },
       refresh: () => {},
       dispose: () => { state.disposed = true; },
     };
     return {
-      presenter, sent, state, screen, presentationChanged: () => presentationChanged?.(),
+      presenter, sent, state, screen, themeUpdates,
+      presentationChanged: () => presentationChanged?.(),
       overrideForeground(foreground: string) {
         const terminalOverrides = { ...themeStatus.terminalOverrides, foreground };
         themeStatus = {
@@ -814,6 +820,29 @@ describe("surface delivery", () => {
         effectiveTheme: { foreground: "#abcdef" },
       },
     });
+  });
+
+  it("delivers one declared host theme update at the theme epoch edge", async () => {
+    const { adapter, created } = surfaceAdapter();
+    const { pane } = surfaceMount(adapter);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    const root = document.documentElement;
+    root.dataset.themeMode = "light";
+    root.style.setProperty("--card", "#f0f0f0");
+    root.style.setProperty("--fg", "#202020");
+    root.dataset.themeEpoch = String(Number(root.dataset.themeEpoch ?? "0") + 1);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(created().themeUpdates).toHaveLength(1);
+    expect(pane.status.current().presentation).toMatchObject({
+      themeMode: "light",
+      baseTheme: { background: "#f0f0f0", foreground: "#202020" },
+      effectiveTheme: { background: "#f0f0f0", foreground: "#202020" },
+    });
+    root.dataset.themeMode = "dark";
+    root.style.setProperty("--card", "#1e1e1e");
+    root.style.setProperty("--fg", "#eeeeec");
+    await pane.stop();
   });
 
   it("refuses a surface renderer with no input path by name", () => {
