@@ -38,10 +38,10 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@soksak/soksak-contract-plugin-terminal": "0.0.12"
+    "@soksak/soksak-contract-plugin-terminal": "0.0.13"
   },
   "devDependencies": {
-    "@soksak/soksak-contract-plugin-terminal": "0.0.12",
+    "@soksak/soksak-contract-plugin-terminal": "0.0.13",
     "esbuild": "0.28.2",
     "jsdom": "30.0.1",
     "typescript": "5.9.3",

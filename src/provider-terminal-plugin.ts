@@ -16,6 +16,8 @@ import { closedTerminalPresentation } from "./terminal-presentation-status";
 import { waitForTerminalConditions } from "./terminal-condition-wait";
 import { waitForTerminalSize } from "./terminal-size-wait";
 import { readTerminalTheme } from "./terminal-theme";
+import { quoteTerminalDropPath } from "./terminal-drop-path";
+import { terminalLoginShell } from "./terminal-environment";
 import { terminalResizeStatus } from "./terminal-resize-status";
 import type { TerminalLayoutEvents } from "./terminal-layout-observer";
 import { parseRestoreState } from "./workbench/restore-state";
@@ -65,8 +67,7 @@ export interface ProviderTerminalPluginHost extends PaneSetHost {
   fileGrants?: {
     redeem(id: string): Promise<{
       kind: "file" | "image";
-      shellText: string;
-      inline?: { protocol: string; data: string };
+      path: string;
     } | null>;
   };
   // The plugin's user settings (manifest configuration); the engine selection is read here.
@@ -589,17 +590,14 @@ export function activateProviderTerminalPlugin(
     if (found && host.fileGrants) {
       for (const token of tokens) {
         const grant = await host.fileGrants.redeem(token);
-        if (grant && grant.shellText !== "" && !/[\0\r\n]/.test(grant.shellText)) redeemed.push(grant);
+        if (grant && grant.path !== "" && !/[\0\r\n]/.test(grant.path)) redeemed.push(grant);
       }
     }
     let accepted = 0;
     if (found?.pane.writable && mode === "path" && redeemed.length > 0) {
-      await found.pane.write(`${redeemed.map((grant) => grant.shellText).join(" ")} `);
+      const shell = await terminalLoginShell(host.commands);
+      await found.pane.write(`${redeemed.map((grant) => quoteTerminalDropPath(grant.path, shell)).join(" ")} `);
       accepted = redeemed.length;
-    } else if (found && mode === "inline" && found.pane.presenter.presentInlineImage) {
-      for (const grant of redeemed) {
-        if (grant.inline && await found.pane.presenter.presentInlineImage(grant.inline)) accepted += 1;
-      }
     }
     const result = { pane: found?.pane.key ?? null, accepted, mode };
     const drop = found?.pane.root.querySelector<HTMLElement>('[data-node^="terminal-drop-target"]');

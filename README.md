@@ -1,7 +1,7 @@
 # soksak-kit-plugin-terminal
 
 Reusable browser-side implementation for terminal plugins implementing
-`soksak-spec-plugin-terminal` 0.0.12.
+`soksak-spec-plugin-terminal` 0.0.13.
 
 The kit owns view registration, PTY and recovery lifecycle, resizing, public status, and every
 command required by the terminal plugin contract. A plugin may supply a renderer adapter for engine
@@ -24,8 +24,9 @@ automated oracle.
 
 Selection, copy, paste and drop are common Kit behavior. Copy and implicit paste use only the host
 clipboard capability. Paste wraps text with bracketed-paste markers only when the active presenter
-reports that engine mode. A file drop accepts opaque host grants; redemption supplies shell-quoted
-text, so a command cannot inject a raw path as a grant. Inline mode runs only through a presenter
+reports that engine mode. A file drop accepts opaque host grants. The host redeems a grant to its
+raw authorized path, and this Kit quotes it for the login shell read from `app.environment`; Core
+owns no shell syntax and a command cannot inject a raw path as a grant. Inline mode runs only through a presenter
 capability and never falls back to path input. The pane exposes `terminal-drop-target`, clipboard
 permission, selection, bracketed-paste mode and the last accepted/refused drop in status, DOM data
 and events.

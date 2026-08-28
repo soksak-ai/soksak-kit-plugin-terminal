@@ -17,3 +17,4 @@ export * from "./terminal-layout-observer";
 export * from "./terminal-size-wait";
 export * from "./terminal-resize-worker";
 export * from "./terminal-theme";
+export * from "./terminal-drop-path";

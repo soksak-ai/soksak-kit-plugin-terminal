@@ -1,3 +1,5 @@
+import { terminalLoginShell } from "./terminal-environment";
+
 export interface TerminalSidecarChannel {
   send(request: Record<string, unknown>): Promise<Record<string, unknown>>;
   stream(
@@ -182,17 +184,7 @@ export function createTerminalSessionBinding(
     return btoa(binary);
   };
   let loginShellPromise: Promise<string> | null = null;
-  const loginShell = () => (loginShellPromise ??= (async () => {
-    const executed = await host.commands?.execute?.("app.environment", {});
-    const data = executed && typeof executed === "object" && "data" in executed
-      ? (executed as { data?: unknown }).data : executed;
-    const shell = data && typeof data === "object"
-      ? (data as { loginShell?: unknown }).loginShell : undefined;
-    if (typeof shell !== "string" || shell === "") {
-      throw new Error("app.environment returned no login shell");
-    }
-    return shell;
-  })());
+  const loginShell = () => (loginShellPromise ??= terminalLoginShell(host.commands));
   return {
     async open(paneId, cols, rows, replay, observerToken, openOptions) {
       const channel = await pty();
