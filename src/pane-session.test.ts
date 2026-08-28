@@ -700,6 +700,10 @@ describe("surface delivery", () => {
   function surfacePresenter(root: HTMLElement) {
     const sent: string[] = [];
     const state = { offset: 0, historySize: 100, disposed: false, rendered: 42 };
+    const screen = root.ownerDocument.createElement("div");
+    screen.dataset.node = "terminal-screen";
+    root.append(screen);
+    let presentationChanged: (() => void) | null = null;
     const presenter = {
       root,
       size: () => ({ cols: 80, rows: 24 }),
@@ -713,10 +717,14 @@ describe("surface delivery", () => {
         state.offset = Math.max(0, Math.min(state.historySize, state.offset + lines));
       },
       scrollTo: (offset: number) => { state.offset = offset; },
+      onPresentationChanged: (callback: () => void) => {
+        presentationChanged = callback;
+        return { dispose: () => { presentationChanged = null; } };
+      },
       refresh: () => {},
       dispose: () => { state.disposed = true; },
     };
-    return { presenter, sent, state };
+    return { presenter, sent, state, screen, presentationChanged: () => presentationChanged?.() };
   }
   const surfaceAdapter = () => {
     let last: ReturnType<typeof surfacePresenter> | null = null;
@@ -767,6 +775,25 @@ describe("surface delivery", () => {
     const moved = await pane.scroll({ lines: 10 });
     expect(moved).toEqual({ pane: "tab-a.2", offset: 10, historySize: 100 });
     expect(created().state.offset).toBe(10);
+  });
+
+  it("publishes a surface presenter's engine-driven presentation changes", async () => {
+    const published: Array<Record<string, unknown>> = [];
+    const { adapter, created } = surfaceAdapter();
+    const { binding } = fakeBinding(() => ({ ok: true, data: {} }));
+    const { pane } = mount(binding, {
+      config: { pluginId: "plugin", engineId: "vt100", renderer: adapter },
+      publish: (value) => published.push(value as unknown as Record<string, unknown>),
+    });
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    const before = published.length;
+    created().screen.dataset.cursorShape = "bar";
+    created().screen.dataset.cursorBlinking = "true";
+    created().presentationChanged();
+    expect(published).toHaveLength(before + 1);
+    expect(published.at(-1)).toMatchObject({
+      presentation: { cursorShape: "bar", cursorBlinking: true },
+    });
   });
 
   it("refuses a surface renderer with no input path by name", () => {
