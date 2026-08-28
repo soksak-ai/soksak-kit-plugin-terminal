@@ -1,4 +1,5 @@
 import type {
+  TerminalDropResultStatus,
   TerminalPresentationStatus,
   TerminalPresentationTheme,
 } from "@soksak/soksak-contract-plugin-terminal";
@@ -13,6 +14,21 @@ export function terminalNodeId(node: string, suffix: string | null): string {
 export function terminalNode(root: ParentNode, node: string, suffix: string | null): HTMLElement | null {
   return root.querySelector<HTMLElement>(`[data-node="${terminalNodeId(node, suffix)}"]`)
     ?? (suffix === null ? null : root.querySelector<HTMLElement>(`[data-node="${node}"]`));
+}
+
+function lastDrop(root: ParentNode, suffix: string | null): TerminalDropResultStatus | null {
+  const raw = terminalNode(root, "terminal-drop-target", suffix)?.dataset.lastDrop;
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<TerminalDropResultStatus>;
+    return Number.isSafeInteger(value.accepted) && Number(value.accepted) >= 0
+      && Number.isSafeInteger(value.refused) && Number(value.refused) >= 0
+      && (value.mode === "path" || value.mode === "inline")
+      ? { accepted: Number(value.accepted), refused: Number(value.refused), mode: value.mode }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface TerminalPresentationStatusController {
@@ -63,6 +79,20 @@ export function createTerminalPresentationStatus(
       acceptedInputSequence,
       ptyWriteSequence,
       focusedInput: input != null && input.ownerDocument.activeElement === input,
+      bracketedPaste: screen?.dataset.bracketedPaste === "true",
+      selection: {
+        active: root instanceof HTMLElement && root.dataset.selectionActive === "true",
+        text: root instanceof HTMLElement ? root.dataset.selectionText ?? "" : "",
+      },
+      clipboardPermission: {
+        read: root instanceof HTMLElement && root.dataset.clipboardRead === "true",
+        write: root instanceof HTMLElement && root.dataset.clipboardWrite === "true",
+      },
+      drop: {
+        fileGrantState: terminalNode(root, "terminal-drop-target", nodeSuffix)?.dataset.fileGrantState === "available"
+          ? "available" : "unavailable",
+        last: lastDrop(root, nodeSuffix),
+      },
       cursorVisible: screen?.dataset.cursorVisible === "true",
       cursorActive: screen?.dataset.cursorActive === "true",
       cursorRow: cursorRow === undefined ? null : Number(cursorRow),
@@ -125,6 +155,10 @@ export function closedTerminalPresentation(
     acceptedInputSequence: 0,
     ptyWriteSequence: 0,
     focusedInput: false,
+    bracketedPaste: false,
+    selection: { active: false, text: "" },
+    clipboardPermission: { read: false, write: false },
+    drop: { fileGrantState: "unavailable", last: null },
     cursorVisible: false,
     cursorActive: false,
     cursorRow: null,

@@ -1,5 +1,9 @@
 import type { TerminalPluginPublicStatus, TerminalPresentationStatus } from "@soksak/soksak-contract-plugin-terminal";
-import { createProviderFramePresenter, type ProviderFrame } from "./provider-frame-presenter";
+import {
+  createProviderFramePresenter,
+  type ProviderFrame,
+  type ProviderFrameModes,
+} from "./provider-frame-presenter";
 import type { TerminalSessionBinding } from "./terminal-session-binding";
 import { createBoundedOutputTail } from "./bounded-output-tail";
 import { createTerminalStatusController, type TerminalStatusController } from "./terminal-status-publication";
@@ -26,6 +30,8 @@ export interface TerminalPresenter {
   read(lines?: number): string;
   selection?(): string;
   compose?(updates: string[], data: string): number;
+  modes?(): ProviderFrameModes;
+  presentInlineImage?(image: { protocol: string; data: string }): Promise<boolean> | boolean;
   waitForText(contains: string, timeoutMs: number): Promise<string>;
   focus(): boolean;
   prepareFocusTransfer?(): void;
@@ -250,6 +256,14 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   });
   if (!root.style.position) root.style.position = "relative";
   root.append(notice);
+  const dropTarget = document.createElement("div");
+  dropTarget.dataset.node = terminalNodeId("terminal-drop-target", nodeSuffix);
+  dropTarget.dataset.fileGrantState = "unavailable";
+  dropTarget.setAttribute("aria-hidden", "true");
+  Object.assign(dropTarget.style, {
+    position: "absolute", inset: "0", pointerEvents: "none",
+  });
+  root.append(dropTarget);
   presentation = createTerminalPresentationStatus(
     root, rendererDelivery(config.renderer),
     () => readTerminalTheme(document.documentElement), now, nodeSuffix,

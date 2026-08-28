@@ -8,6 +8,7 @@ import { bindTerminalThemeSurface } from "./terminal-theme";
 // n is the cells the run covers: one per narrow glyph, two per wide one.
 export interface ProviderFrameRun { text: string; fg: string; bg: string; attrs: number; n?: number; wide?: boolean; link?: string | null }
 export interface ProviderFrameRow { y: number; wrapped?: boolean; runs: ProviderFrameRun[] }
+export interface ProviderFrameModes { bracketedPaste: boolean }
 // The reply the terminal contract declares. full replaces every row; otherwise only the listed
 // rows change and the rest stand.
 export interface ProviderFrame {
@@ -21,6 +22,7 @@ export interface ProviderFrame {
   outputSequence?: number;
   offset?: number;
   historySize?: number;
+  modes?: ProviderFrameModes;
 }
 
 export interface ProviderFramePresenterOptions {
@@ -38,6 +40,7 @@ export interface ProviderFramePresenter {
   metrics(): { cellWidth: number; cellHeight: number } | null;
   selection(): string;
   compose(updates: string[], data: string): number;
+  modes(): ProviderFrameModes;
   waitForText(contains: string, timeoutMs: number): Promise<string>;
   focus(): boolean; dispose(): void;
 }
@@ -135,6 +138,7 @@ export function createProviderFramePresenter(
   Object.assign(container.style, { overflow: "hidden", position: "relative" });
   const screen = document.createElement("pre");
   screen.dataset.node = terminalNodeId("terminal-screen", suffix);
+  screen.dataset.bracketedPaste = "false";
   screen.setAttribute("role", "log");
   screen.setAttribute("aria-live", "polite");
   screen.tabIndex = -1;
@@ -177,6 +181,7 @@ export function createProviderFramePresenter(
   let size = { cols: 0, rows: 0 };
   let cursor: [number, number] = [0, 0];
   let cursorVisible = false;
+  let modes: ProviderFrameModes = { bracketedPaste: false };
   const textListeners = new Set<(text: string) => void>();
   const updateCursor = () => {
     const focused = document.activeElement === input;
@@ -227,6 +232,8 @@ export function createProviderFramePresenter(
       size = { cols: frame.cols, rows: frame.rows };
       cursor = [frame.cursor[0], frame.cursor[1]];
       cursorVisible = frame.cursorVisible;
+      modes = frame.modes ? { bracketedPaste: frame.modes.bracketedPaste === true } : modes;
+      screen.dataset.bracketedPaste = String(modes.bracketedPaste);
       dirty.add(previousCursorRow);
       dirty.add(cursor[0]);
       while (screen.children.length < frame.rows) {
@@ -284,6 +291,7 @@ export function createProviderFramePresenter(
       }
       return emitted;
     },
+    modes: () => ({ ...modes }),
     waitForText(contains, timeoutMs) {
       if (text.includes(contains)) return Promise.resolve(text);
       return new Promise((resolve, reject) => {

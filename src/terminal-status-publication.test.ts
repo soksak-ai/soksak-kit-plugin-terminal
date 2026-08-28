@@ -5,6 +5,9 @@ import { createTerminalStatusController } from "./terminal-status-publication";
 const presentation = () => ({
   delivery: "frame" as const, mountSequence: 1, readySequence: null, renderSequence: 0, focusSequence: 0,
   acceptedInputSequence: 0, ptyWriteSequence: 0, focusedInput: false,
+  bracketedPaste: false, selection: { active: false, text: "" },
+  clipboardPermission: { read: false, write: false },
+  drop: { fileGrantState: "unavailable" as const, last: null },
   cursorVisible: false, cursorActive: false, cursorRow: null, cursorColumn: null,
   mountedAtUnixMs: 1, firstVisibleFrameAtUnixMs: null, firstFocusableInputAtUnixMs: null,
   lastRenderedAtUnixMs: null, lastFocusedAtUnixMs: null, lastInputAtUnixMs: null, lastPtyWriteAtUnixMs: null,

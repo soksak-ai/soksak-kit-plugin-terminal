@@ -54,6 +54,17 @@ export interface ProviderTerminalPluginHost extends PaneSetHost {
     register(name: string, spec: Record<string, unknown>): { dispose(): void } | void;
     execute?(name: string, params?: Record<string, unknown>): Promise<unknown>;
   };
+  clipboard?: {
+    readText?(): Promise<string>;
+    writeText?(text: string): Promise<void>;
+  };
+  fileGrants?: {
+    redeem(id: string): Promise<{
+      kind: "file" | "image";
+      shellText: string;
+      inline?: { protocol: string; data: string };
+    } | null>;
+  };
   // The plugin's user settings (manifest configuration); the engine selection is read here.
   settings?: { get(key: string): unknown };
 }
@@ -237,6 +248,12 @@ export function activateProviderTerminalPlugin(
         viewId, restore: context.restore?.state, restoreCwd: context.restore?.cwd ?? null,
         layout: config.layout ?? "workbench", events: host.events,
       });
+      for (const pane of set.list()) {
+        pane.root.dataset.clipboardRead = String(host.clipboard?.readText !== undefined);
+        pane.root.dataset.clipboardWrite = String(host.clipboard?.writeText !== undefined);
+        const drop = pane.root.querySelector<HTMLElement>('[data-node^="terminal-drop-target"]');
+        if (drop) drop.dataset.fileGrantState = host.fileGrants ? "available" : "unavailable";
+      }
       const presentEverywhere = (visible: boolean, dim: number) => {
         for (const pane of set.list()) pane.setShown(visible, dim);
       };
@@ -286,16 +303,32 @@ export function activateProviderTerminalPlugin(
     phase: "closed", recoveryOutcome: "blocked", fidelity: "unavailable",
     failure: null, hostPixels: { width: 0, height: 0 }, requested: null, pty: null,
     recovery: null, rendered: null, operation: "closed",
-    presentation: closedTerminalPresentation(
-      rendererDelivery(config.renderer),
-      readTerminalTheme(document.documentElement),
-    ),
+    presentation: {
+      ...closedTerminalPresentation(
+        rendererDelivery(config.renderer),
+        readTerminalTheme(document.documentElement),
+      ),
+      clipboardPermission: {
+        read: host.clipboard?.readText !== undefined,
+        write: host.clipboard?.writeText !== undefined,
+      },
+      drop: { fileGrantState: host.fileGrants ? "available" : "unavailable", last: null },
+    },
     view: null, pane: null, panes: [],
   });
   const publicStatus = async ({ view, pane }: Target): Promise<TerminalPluginViewStatus> => {
     const rendered = pane.presenter.size();
+    const current = pane.status.current();
+    const selected = pane.presenter.selection?.() ?? "";
+    const drop = pane.root.querySelector<HTMLElement>('[data-node^="terminal-drop-target"]');
+    let last: TerminalPluginViewStatus["presentation"]["drop"]["last"] = null;
+    try {
+      const value = drop?.dataset.lastDrop ? JSON.parse(drop.dataset.lastDrop) : null;
+      if (value && Number.isSafeInteger(value.accepted) && Number.isSafeInteger(value.refused)
+        && (value.mode === "path" || value.mode === "inline")) last = value;
+    } catch { /* malformed DOM state is reported as no completed drop */ }
     return {
-      ...pane.status.current(),
+      ...current,
       ...terminalResizeStatus({
         pane: pane.key, session: pane.session,
         hostPixels: pane.hostPixels(),
@@ -304,6 +337,19 @@ export function activateProviderTerminalPlugin(
         operation: pane.root.dataset.terminalOperation ?? "unknown",
         diagnostics: await diagnosticsOrEmpty(pane.binding),
       }),
+      presentation: {
+        ...current.presentation,
+        bracketedPaste: pane.presenter.modes?.().bracketedPaste === true,
+        selection: { active: selected !== "", text: selected },
+        clipboardPermission: {
+          read: host.clipboard?.readText !== undefined,
+          write: host.clipboard?.writeText !== undefined,
+        },
+        drop: {
+          fileGrantState: host.fileGrants ? "available" : "unavailable",
+          last,
+        },
+      },
       view: view.viewId, pane: pane.key, panes: view.set.list().map(paneSummary),
     };
   };
@@ -492,8 +538,77 @@ export function activateProviderTerminalPlugin(
   });
   register("selection", scoped(), (params, context) => {
     const found = target(params, context);
-    return found ? { pane: found.pane.key, text: found.pane.presenter.selection?.() ?? "" } : { pane: null, text: "" };
+    const result = found ? { pane: found.pane.key, text: found.pane.presenter.selection?.() ?? "" } : { pane: null, text: "" };
+    if (found) {
+      found.pane.root.dataset.selectionActive = String(result.text !== "");
+      found.pane.root.dataset.selectionText = result.text;
+    }
+    found?.pane.root.dispatchEvent(new CustomEvent("soksak:terminal-selection", { bubbles: true, detail: result }));
+    return result;
   });
+  register("copy", scoped(), async (params, context) => {
+    const found = target(params, context);
+    const text = found?.pane.presenter.selection?.() ?? "";
+    if (found) {
+      found.pane.root.dataset.selectionActive = String(text !== "");
+      found.pane.root.dataset.selectionText = text;
+    }
+    const copied = Boolean(found && text && host.clipboard?.writeText);
+    if (copied) await host.clipboard!.writeText!(text);
+    const result = { pane: found?.pane.key ?? null, text, copied };
+    found?.pane.root.dispatchEvent(new CustomEvent("soksak:terminal-clipboard-copied", { bubbles: true, detail: result }));
+    return result;
+  });
+  register("paste", scoped({
+    data: { type: "string", description: { en: "Text; omitted reads the granted clipboard", ko: "텍스트; 생략하면 허용된 클립보드를 읽음" } },
+  }), async (params, context) => {
+    const found = target(params, context);
+    const explicit = typeof params.data === "string" ? params.data : null;
+    const data = explicit ?? (host.clipboard?.readText ? await host.clipboard.readText() : null);
+    if (!found?.pane.writable || data === null) {
+      return { pane: found?.pane.key ?? null, pasted: false, sent: 0 };
+    }
+    const bracketed = found.pane.presenter.modes?.().bracketedPaste === true;
+    const payload = bracketed ? `\x1b[200~${data}\x1b[201~` : data;
+    await found.pane.write(payload);
+    const result = { pane: found.pane.key, pasted: true, sent: payload.length };
+    found.pane.root.dispatchEvent(new CustomEvent("soksak:terminal-clipboard-pasted", { bubbles: true, detail: result }));
+    return result;
+  }, "inject");
+  register("drop", scoped({
+    grants: { type: "array", required: true, description: { en: "Opaque host-issued file grants", ko: "host가 발급한 불투명 file grant" } },
+    mode: { type: "string", enum: ["path", "inline"], description: { en: "Path input or declared inline image", ko: "path 입력 또는 선언된 inline image" } },
+  }), async (params, context) => {
+    const found = target(params, context);
+    const mode = params.mode === "inline" ? "inline" : "path";
+    const tokens = Array.isArray(params.grants)
+      ? params.grants.filter((value): value is string => typeof value === "string" && value !== "")
+      : [];
+    const redeemed = [];
+    if (found && host.fileGrants) {
+      for (const token of tokens) {
+        const grant = await host.fileGrants.redeem(token);
+        if (grant && grant.shellText !== "" && !/[\0\r\n]/.test(grant.shellText)) redeemed.push(grant);
+      }
+    }
+    let accepted = 0;
+    if (found?.pane.writable && mode === "path" && redeemed.length > 0) {
+      await found.pane.write(`${redeemed.map((grant) => grant.shellText).join(" ")} `);
+      accepted = redeemed.length;
+    } else if (found && mode === "inline" && found.pane.presenter.presentInlineImage) {
+      for (const grant of redeemed) {
+        if (grant.inline && await found.pane.presenter.presentInlineImage(grant.inline)) accepted += 1;
+      }
+    }
+    const result = { pane: found?.pane.key ?? null, accepted, mode };
+    const drop = found?.pane.root.querySelector<HTMLElement>('[data-node^="terminal-drop-target"]');
+    if (drop) drop.dataset.lastDrop = JSON.stringify({ accepted, refused: tokens.length - accepted, mode });
+    found?.pane.root.dispatchEvent(new CustomEvent(
+      accepted > 0 ? "soksak:terminal-drop-accepted" : "soksak:terminal-drop-refused",
+      { bubbles: true, detail: { ...result, refused: tokens.length - accepted } },
+    ));
+    return result;
+  }, "inject");
   register("input.compose", scoped({
     updates: { type: "array", required: true, description: { en: "Composition updates in order", ko: "순서대로의 조합 갱신" } },
     data: { type: "string", required: true, description: { en: "Committed text", ko: "확정 텍스트" } },
