@@ -74,6 +74,8 @@ projection입니다. 로컬 환경과 GitHub Actions가 그 version을 선택한
 호출합니다. 잘못된 Node에서 direct pnpm을 호출하면 dependency 해석 전에 실패합니다. pnpm은
 script 실행 전에 어긋난 dependency tree를 몰래 복구하지도 않습니다. Dependency를
 materialize하는 유일한 진입점은 `make prepare`입니다.
+소유한 dependency 선언을 바꿀 때는 `make lock`만 lockfile을 재생성합니다. 이 명령은 package를
+materialize하지 않고 lock만 갱신하며, 그 뒤 `make prepare`가 정확한 frozen 상태를 설치합니다.
 
 이 패키지는 `@soksak/soksak-contract-plugin-terminal`에 의존하므로 설치를 수행하는 모든 `make`
 호출은 명령줄 `REGISTRY`를 요구하며, 패키지가 `https://registry.npmjs.org`에 publish된 뒤에도
@@ -81,6 +83,7 @@ materialize하는 유일한 진입점은 `make prepare`입니다.
 `REGISTRY required: this package depends on @soksak/...`으로 거부합니다.
 
 ```sh
+make lock REGISTRY=http://host:port/
 make verify REGISTRY=http://host:port/
 ```
 

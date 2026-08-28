@@ -83,6 +83,9 @@ entrypoints. A local environment and GitHub Actions select that version before c
 Make targets. A mismatched direct pnpm command fails before dependency resolution. pnpm also
 refuses to repair an out-of-date dependency tree before a script; `make prepare` is the only
 dependency-materialization entrypoint.
+When an owned dependency declaration changes, `make lock` is the only lockfile-regeneration
+entrypoint. It updates the lock without materializing packages; `make prepare` then installs that
+exact frozen state.
 
 The package depends on `@soksak/soksak-contract-plugin-terminal`, so every `make` invocation that
 installs requires `REGISTRY` on the command line, `https://registry.npmjs.org` included once the
@@ -90,6 +93,7 @@ packages are published there. The Makefile reads the requirement from `package.j
 `REGISTRY required: this package depends on @soksak/...` when it is absent.
 
 ```sh
+make lock REGISTRY=http://host:port/
 make verify REGISTRY=http://host:port/
 ```
 
