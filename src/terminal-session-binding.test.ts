@@ -98,6 +98,10 @@ describe("shared terminal session binding", () => {
   });
 
   it("reopens a recovery sidecar after the previous channel fails", async () => {
+    const pty: TerminalSidecarChannel = {
+      send: vi.fn(async () => ({ ok: true, result: { data: {} } })),
+      stream: vi.fn(),
+    };
     const first: TerminalSidecarChannel = {
       send: vi.fn(async () => { throw new Error("recovery sidecar ended"); }),
       stream: vi.fn(),
@@ -106,11 +110,11 @@ describe("shared terminal session binding", () => {
       send: vi.fn(async () => ({ ok: true, result: { data: { sessions: [] } } })),
       stream: vi.fn(),
     };
-    let opens = 0;
+    let recoveryOpens = 0;
     const operations: string[] = [];
     const binding = createTerminalSessionBinding({
       windowLabel: () => "window-a",
-      sidecar: { open: async () => (++opens === 1 ? first : second) },
+      sidecar: { open: async (name) => name === "pty" ? pty : (++recoveryOpens === 1 ? first : second) },
     }, {
       ptySidecarId: "pty", terminalSidecarId: "recovery",
       onOperation: (operation) => { operations.push(operation); },
@@ -118,7 +122,7 @@ describe("shared terminal session binding", () => {
 
     await expect(binding.recoveryRequest({ op: "status" })).rejects.toThrow("recovery sidecar ended");
     await expect(binding.recoveryRequest({ op: "status" })).resolves.toMatchObject({ ok: true });
-    expect(opens).toBe(2);
+    expect(recoveryOpens).toBe(2);
     expect(operations).toEqual(["opening-recovery", "ready", "opening-recovery", "ready"]);
   });
 

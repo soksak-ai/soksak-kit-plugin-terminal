@@ -100,9 +100,9 @@ export function createTerminalSessionBinding(
     if (!recoveryPromise) {
       const key = options.checkpointKey ?? "terminal-checkpoint-key-v1";
       options.onOperation?.("opening-recovery");
-      recoveryPromise = host.sidecar.open(options.terminalSidecarId, {
+      recoveryPromise = pty().then(() => host.sidecar.open(options.terminalSidecarId, {
         generatedSecretEnv: { [KEY_ENV]: { key, bytes: 32 } },
-      }).then(async (channel) => {
+      })).then(async (channel) => {
         if (disposed) {
           await channel.close?.();
           throw new Error("terminal session binding is disposed");
