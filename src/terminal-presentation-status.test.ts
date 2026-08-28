@@ -22,6 +22,10 @@ describe("terminal presentation status", () => {
     screen.dataset.node = "terminal-screen";
     screen.dataset.cursorVisible = "true";
     screen.dataset.cursorActive = "false";
+    screen.dataset.cursorShape = "bar";
+    screen.dataset.cursorBlinking = "true";
+    screen.dataset.cursorAnimationIntervalMs = "750";
+    screen.dataset.cursorAnimationPhase = "off";
     screen.dataset.cursorRow = "2";
     screen.dataset.cursorColumn = "3";
     const input = document.createElement("textarea");
@@ -41,6 +45,9 @@ describe("terminal presentation status", () => {
       maxRenderDurationMs: 7,
       lastInputToPtyWriteMs: 12,
       cursorVisible: true,
+      cursorShape: "bar",
+      cursorBlinking: true,
+      cursorAnimation: { intervalMs: 750, phase: "off" },
       cursorRow: 2,
       cursorColumn: 3,
     });
