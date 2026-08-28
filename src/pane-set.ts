@@ -11,7 +11,7 @@ export interface PaneSetHost extends TerminalSessionHost {
   };
   terminal?: TerminalSessionHost["terminal"] & {
     registerIo?(pane: string, io: {
-      readBuffer(lines?: number): string;
+      readBuffer(lines?: number): string | Promise<string>;
       sendInput(data: string): void;
     }): { dispose(): void };
     getCwd?(pane: string): string | undefined;

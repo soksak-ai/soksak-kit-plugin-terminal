@@ -424,11 +424,14 @@ export function activateProviderTerminalPlugin(
   });
   register("read", scoped({
     lines: { type: "number", description: { en: "Trailing line count", ko: "마지막 줄 수" } },
-  }), (params, context) => ({
-    text: target(params, context)?.pane.presenter.read(
-      typeof params.lines === "number" ? params.lines : undefined,
-    ) ?? "",
-  }));
+  }), async (params, context) => {
+    const found = target(params, context);
+    return {
+      text: found
+        ? await found.pane.presenter.read(typeof params.lines === "number" ? params.lines : undefined)
+        : "",
+    };
+  });
   register("send", scoped({
     data: { type: "string", required: true, description: { en: "Input data", ko: "입력 데이터" } },
   }), (params, context) => {

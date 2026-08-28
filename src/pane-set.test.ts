@@ -104,7 +104,10 @@ describe("pane set", () => {
   });
 
   it("registers one io mirror under the view id that forwards to the focused pane", async () => {
-    const registered: Array<[string, { readBuffer(lines?: number): string; sendInput(data: string): void }]> = [];
+    const registered: Array<[
+      string,
+      { readBuffer(lines?: number): string | Promise<string>; sendInput(data: string): void },
+    ]> = [];
     const { set, writes, emit, paneRoot } = setup({
       terminal: { registerIo: (pane, io) => { registered.push([pane, io]); return { dispose() {} }; } },
     });
