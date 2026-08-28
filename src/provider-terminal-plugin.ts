@@ -15,7 +15,7 @@ import { createTerminalSessionBinding, type TerminalSessionBinding } from "./ter
 import { closedTerminalPresentation } from "./terminal-presentation-status";
 import { waitForTerminalConditions } from "./terminal-condition-wait";
 import { waitForTerminalSize } from "./terminal-size-wait";
-import { readTerminalTheme } from "./terminal-theme";
+import { readTerminalThemeStatus } from "./terminal-theme";
 import { quoteTerminalDropPath } from "./terminal-drop-path";
 import { terminalLoginShell } from "./terminal-environment";
 import { terminalResizeStatus } from "./terminal-resize-status";
@@ -311,7 +311,7 @@ export function activateProviderTerminalPlugin(
     presentation: {
       ...closedTerminalPresentation(
         rendererDelivery(config.renderer),
-        readTerminalTheme(document.documentElement),
+        readTerminalThemeStatus(document.documentElement),
       ),
       clipboardPermission: {
         read: host.clipboard?.readText !== undefined,

@@ -1,11 +1,17 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
+import { emptyTerminalThemeOverrides, resolveTerminalTheme, TERMINAL_ANSI_PALETTE } from "@soksak/soksak-contract-plugin-terminal";
 import { createTerminalStatusController } from "./terminal-status-publication";
 import { closedTerminalPresentation } from "./terminal-presentation-status";
 
-const theme = {
+const baseTheme = {
   foreground: "#eeeeec", background: "#1e1e1e", cursor: "#ffffff",
-  cursorAccent: "#1e1e1e", selectionBackground: "#555753",
+  cursorAccent: "#1e1e1e", selectionBackground: "#555753", ansi: [...TERMINAL_ANSI_PALETTE],
+};
+const terminalOverrides = emptyTerminalThemeOverrides();
+const theme = {
+  themeMode: "dark" as const, baseTheme, terminalOverrides,
+  effectiveTheme: resolveTerminalTheme(baseTheme, terminalOverrides),
 };
 import { waitForTerminalConditions } from "./terminal-condition-wait";
 

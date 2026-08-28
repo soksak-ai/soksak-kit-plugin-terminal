@@ -1,10 +1,13 @@
 import {
+  emptyTerminalThemeOverrides,
+  resolveTerminalTheme,
   TERMINAL_ANSI_PALETTE,
   TERMINAL_THEME_CONTRACT,
-  type TerminalPresentationTheme,
+  type TerminalThemePalette,
+  type TerminalThemeStatus,
 } from "@soksak/soksak-contract-plugin-terminal";
 
-type TerminalThemeRole = keyof TerminalPresentationTheme;
+type TerminalThemeRole = "foreground" | "background" | "cursor" | "cursorAccent" | "selectionBackground";
 
 const cssVariable = (name: string): string => `var(${name})`;
 
@@ -28,7 +31,7 @@ export function bindTerminalThemeSurface(screen: HTMLElement): void {
   });
 }
 
-export function readTerminalTheme(root: HTMLElement): TerminalPresentationTheme {
+export function readTerminalTheme(root: HTMLElement): TerminalThemePalette {
   const style = getComputedStyle(root);
   const read = (role: TerminalThemeRole): string => {
     const value = style.getPropertyValue(TERMINAL_THEME_CONTRACT.tokens[role]).trim();
@@ -41,7 +44,28 @@ export function readTerminalTheme(root: HTMLElement): TerminalPresentationTheme 
     cursor: read("cursor"),
     cursorAccent: read("cursorAccent"),
     selectionBackground: read("selectionBackground"),
+    ansi: [...TERMINAL_ANSI_PALETTE],
   };
+}
+
+export function readTerminalThemeStatus(root: HTMLElement): TerminalThemeStatus {
+  const baseTheme = readTerminalTheme(root);
+  const terminalOverrides = emptyTerminalThemeOverrides();
+  return {
+    themeMode: "light",
+    baseTheme,
+    terminalOverrides,
+    effectiveTheme: resolveTerminalTheme(baseTheme, terminalOverrides),
+  };
+}
+
+export function publishTerminalThemeStatus(
+  _root: HTMLElement,
+  _screen: HTMLElement | null,
+  _pane: string,
+  status: TerminalThemeStatus,
+): TerminalThemeStatus {
+  return status;
 }
 
 export function observeTerminalTheme(root: HTMLElement, onChange: () => void): () => void {

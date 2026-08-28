@@ -1,18 +1,24 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
+import { emptyTerminalThemeOverrides, resolveTerminalTheme, TERMINAL_ANSI_PALETTE } from "@soksak/soksak-contract-plugin-terminal";
 
 import { createTerminalPresentationStatus } from "./terminal-presentation-status";
 
-const theme = {
+const baseTheme = {
   foreground: "#eeeeec", background: "#1e1e1e", cursor: "#ffffff",
-  cursorAccent: "#1e1e1e", selectionBackground: "#555753",
+  cursorAccent: "#1e1e1e", selectionBackground: "#555753", ansi: [...TERMINAL_ANSI_PALETTE],
+};
+const terminalOverrides = emptyTerminalThemeOverrides();
+const theme = {
+  themeMode: "dark" as const, baseTheme, terminalOverrides,
+  effectiveTheme: resolveTerminalTheme(baseTheme, terminalOverrides),
 };
 
 describe("terminal presentation status", () => {
   it("publishes the resolved terminal theme through status", () => {
     const root = document.createElement("div");
     const status = createTerminalPresentationStatus(root, "frame", () => theme, () => 100);
-    expect(status.current().theme).toEqual(theme);
+    expect(status.current()).toMatchObject(theme);
   });
 
   it("measures render and accepted-input latency on separate axes", () => {

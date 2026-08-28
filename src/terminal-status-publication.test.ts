@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
+import { emptyTerminalThemeOverrides, resolveTerminalTheme, TERMINAL_ANSI_PALETTE } from "@soksak/soksak-contract-plugin-terminal";
 import { createTerminalStatusController } from "./terminal-status-publication";
+
+const baseTheme = {
+  foreground: "#eeeeec", background: "#1e1e1e", cursor: "#ffffff",
+  cursorAccent: "#1e1e1e", selectionBackground: "#555753", ansi: [...TERMINAL_ANSI_PALETTE],
+};
+const terminalOverrides = emptyTerminalThemeOverrides();
 
 const presentation = () => ({
   delivery: "frame" as const, mountSequence: 1, readySequence: null, renderSequence: 0, focusSequence: 0,
@@ -13,10 +20,8 @@ const presentation = () => ({
   mountedAtUnixMs: 1, firstVisibleFrameAtUnixMs: null, firstFocusableInputAtUnixMs: null,
   lastRenderedAtUnixMs: null, lastFocusedAtUnixMs: null, lastInputAtUnixMs: null, lastPtyWriteAtUnixMs: null,
   lastRenderDurationMs: null, maxRenderDurationMs: null, lastInputToPtyWriteMs: null,
-  theme: {
-    foreground: "#eeeeec", background: "#1e1e1e", cursor: "#ffffff",
-    cursorAccent: "#1e1e1e", selectionBackground: "#555753",
-  },
+  themeMode: "dark" as const, baseTheme, terminalOverrides,
+  effectiveTheme: resolveTerminalTheme(baseTheme, terminalOverrides),
 });
 
 describe("terminal status publication", () => {

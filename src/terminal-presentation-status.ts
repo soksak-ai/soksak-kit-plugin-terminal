@@ -1,7 +1,7 @@
 import type {
   TerminalDropResultStatus,
   TerminalPresentationStatus,
-  TerminalPresentationTheme,
+  TerminalThemeStatus,
 } from "@soksak/soksak-contract-plugin-terminal";
 
 let nextMountSequence = 0;
@@ -43,7 +43,7 @@ export interface TerminalPresentationStatusController {
 export function createTerminalPresentationStatus(
   root: HTMLElement,
   delivery: TerminalPresentationStatus["delivery"],
-  theme: () => TerminalPresentationTheme,
+  theme: () => TerminalThemeStatus,
   now: () => number = Date.now,
   nodeSuffix: string | null = null,
 ): TerminalPresentationStatusController {
@@ -116,7 +116,7 @@ export function createTerminalPresentationStatus(
       lastRenderDurationMs,
       maxRenderDurationMs,
       lastInputToPtyWriteMs,
-      theme: theme(),
+      ...theme(),
     };
   };
   return {
@@ -153,7 +153,7 @@ export function createTerminalPresentationStatus(
 
 export function closedTerminalPresentation(
   delivery: TerminalPresentationStatus["delivery"],
-  theme: TerminalPresentationTheme,
+  theme: TerminalThemeStatus,
 ): TerminalPresentationStatus {
   return {
     delivery,
@@ -185,6 +185,6 @@ export function closedTerminalPresentation(
     lastRenderDurationMs: null,
     maxRenderDurationMs: null,
     lastInputToPtyWriteMs: null,
-    theme,
+    ...theme,
   };
 }

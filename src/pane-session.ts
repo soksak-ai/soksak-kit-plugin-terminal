@@ -11,7 +11,7 @@ import {
   createTerminalPresentationStatus, terminalNodeId, type TerminalPresentationStatusController,
 } from "./terminal-presentation-status";
 import { createTerminalResizeWorker } from "./terminal-resize-worker";
-import { readTerminalTheme } from "./terminal-theme";
+import { readTerminalThemeStatus } from "./terminal-theme";
 
 export interface TerminalPresenter {
   root: HTMLElement;
@@ -269,7 +269,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   root.append(dropTarget);
   presentation = createTerminalPresentationStatus(
     root, rendererDelivery(config.renderer),
-    () => readTerminalTheme(document.documentElement), now, nodeSuffix,
+    () => readTerminalThemeStatus(document.documentElement), now, nodeSuffix,
   );
   if (bytesDelivery && (!presenter.writeOutput || !presenter.applySnapshot || !presenter.onRendered)) {
     throw new Error("byte renderer requires parser and rendered-frame completion contracts");
