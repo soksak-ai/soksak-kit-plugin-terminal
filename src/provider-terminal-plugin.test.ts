@@ -206,7 +206,7 @@ describe("provider-backed terminal plugin", () => {
           applySnapshot: async (snapshot) => { snapshots.push(snapshot); },
           writeOutput: async (bytes) => { output.push(bytes); },
           onRendered: (callback) => { rendered = callback; return { dispose() {} }; },
-          read: () => "A",
+          read: async () => "A",
           waitForText: async () => "A",
           focus: () => true,
           dispose() {},
@@ -235,6 +235,8 @@ describe("provider-backed terminal plugin", () => {
     expect(painted.presentation).toMatchObject({
       renderSequence: 1, lastRenderDurationMs: 6,
     });
+    const read = await (commands.get("read")!.handler as Handler)({ view: "pane" }, { pane: "pane" });
+    expect(read).toEqual({ text: "A" });
   });
 
   it("applies sidecar output while the page receives no animation frames", async () => {

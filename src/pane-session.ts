@@ -34,7 +34,7 @@ export interface TerminalPresenter {
   // and the rendered sequence is read back rather than counted from applied frames.
   sendText?(data: string): Promise<void>;
   renderedOutputSequence?(): number | null;
-  read(lines?: number): string;
+  read(lines?: number): string | Promise<string>;
   selection?(): string;
   compose?(updates: string[], data: string): number;
   modes?(): ProviderFrameModes;
