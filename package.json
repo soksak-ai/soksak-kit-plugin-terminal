@@ -1,6 +1,6 @@
 {
   "name": "@soksak/soksak-kit-plugin-terminal",
-  "version": "0.0.72",
+  "version": "0.0.73",
   "engines": {
     "node": "26.7.0"
   },
@@ -38,10 +38,10 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@soksak/soksak-contract-plugin-terminal": "0.0.13"
+    "@soksak/soksak-contract-plugin-terminal": "0.0.14"
   },
   "devDependencies": {
-    "@soksak/soksak-contract-plugin-terminal": "0.0.13",
+    "@soksak/soksak-contract-plugin-terminal": "0.0.14",
     "esbuild": "0.28.2",
     "jsdom": "30.0.1",
     "typescript": "5.9.3",

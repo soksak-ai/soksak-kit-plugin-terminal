@@ -70,6 +70,9 @@ export function createTerminalPresentationStatus(
     if (input && firstFocusableInputAtUnixMs === null) firstFocusableInputAtUnixMs = now();
     const cursorRow = screen?.dataset.cursorRow;
     const cursorColumn = screen?.dataset.cursorColumn;
+    const cursorShape = screen?.dataset.cursorShape;
+    const cursorPhase = screen?.dataset.cursorAnimationPhase;
+    const cursorInterval = Number(screen?.dataset.cursorAnimationIntervalMs ?? 0);
     return {
       delivery,
       mountSequence,
@@ -95,6 +98,12 @@ export function createTerminalPresentationStatus(
       },
       cursorVisible: screen?.dataset.cursorVisible === "true",
       cursorActive: screen?.dataset.cursorActive === "true",
+      cursorShape: cursorShape === "underline" || cursorShape === "bar" ? cursorShape : "block",
+      cursorBlinking: screen?.dataset.cursorBlinking === "true",
+      cursorAnimation: {
+        intervalMs: Number.isFinite(cursorInterval) && cursorInterval >= 0 ? cursorInterval : 0,
+        phase: cursorPhase === "on" || cursorPhase === "off" ? cursorPhase : "steady",
+      },
       cursorRow: cursorRow === undefined ? null : Number(cursorRow),
       cursorColumn: cursorColumn === undefined ? null : Number(cursorColumn),
       mountedAtUnixMs,
@@ -161,6 +170,9 @@ export function closedTerminalPresentation(
     drop: { fileGrantState: "unavailable", last: null },
     cursorVisible: false,
     cursorActive: false,
+    cursorShape: "block",
+    cursorBlinking: false,
+    cursorAnimation: { intervalMs: 0, phase: "steady" },
     cursorRow: null,
     cursorColumn: null,
     mountedAtUnixMs: 0,
