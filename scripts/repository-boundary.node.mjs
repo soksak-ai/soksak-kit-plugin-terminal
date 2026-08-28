@@ -25,8 +25,8 @@ test("repository owns public metadata", () => {
   assert.equal(nodeVersion, pkg.engines.node);
   assert.match(pkg.packageManager, /^pnpm@\d+\.\d+\.\d+$/);
   assert.equal("pnpm" in pkg, false);
-  assert.equal(pkg.peerDependencies["@soksak/soksak-contract-plugin-terminal"], "0.0.11");
-  assert.equal(pkg.devDependencies["@soksak/soksak-contract-plugin-terminal"], "0.0.11");
+  assert.equal(pkg.peerDependencies["@soksak/soksak-contract-plugin-terminal"], "0.0.12");
+  assert.equal(pkg.devDependencies["@soksak/soksak-contract-plugin-terminal"], "0.0.12");
   assert.equal(pkg.dependencies, undefined);
   assert.match(readFileSync(join(root, "pnpm-workspace.yaml"), "utf8"), /allowBuilds:\n  esbuild: true/);
   const releaseFiles = JSON.parse(readFileSync(join(root, "release-files.json"), "utf8"));
