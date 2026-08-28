@@ -46,6 +46,7 @@ export function createTerminalPresentationStatus(
   theme: () => TerminalThemeStatus,
   now: () => number = Date.now,
   nodeSuffix: string | null = null,
+  _pane: string = "",
 ): TerminalPresentationStatusController {
   const mountedAtUnixMs = now();
   const mountSequence = ++nextMountSequence;

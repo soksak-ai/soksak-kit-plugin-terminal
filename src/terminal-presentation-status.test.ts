@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { emptyTerminalThemeOverrides, resolveTerminalTheme, TERMINAL_ANSI_PALETTE } from "@soksak/soksak-contract-plugin-terminal";
+import {
+  emptyTerminalThemeOverrides, resolveTerminalTheme, TERMINAL_ANSI_PALETTE, TERMINAL_THEME_EVENT,
+} from "@soksak/soksak-contract-plugin-terminal";
 
 import { createTerminalPresentationStatus } from "./terminal-presentation-status";
 
@@ -19,6 +21,21 @@ describe("terminal presentation status", () => {
     const root = document.createElement("div");
     const status = createTerminalPresentationStatus(root, "frame", () => theme, () => 100);
     expect(status.current()).toMatchObject(theme);
+  });
+
+  it("publishes one DOM event per changed theme state", () => {
+    const root = document.createElement("div");
+    const screen = document.createElement("div");
+    screen.dataset.node = "terminal-screen";
+    root.append(screen);
+    const events: unknown[] = [];
+    root.addEventListener(TERMINAL_THEME_EVENT, (event) => events.push((event as CustomEvent).detail));
+    const status = createTerminalPresentationStatus(root, "surface", () => theme, () => 100, null, "tab-a.1");
+    status.current();
+    status.current();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ pane: "tab-a.1", themeMode: "dark" });
+    expect(screen.dataset.effectiveTheme).toBe(JSON.stringify(theme.effectiveTheme));
   });
 
   it("measures render and accepted-input latency on separate axes", () => {
