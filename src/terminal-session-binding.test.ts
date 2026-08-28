@@ -4,6 +4,36 @@ import { createTerminalSessionBinding, type TerminalSidecarChannel } from "./ter
 const settledClose = () => ({ dispose() {}, settled: Promise.resolve() });
 
 describe("shared terminal session binding", () => {
+  it("opens the PTY before a provider whose startup requires the PTY token", async () => {
+    const opened: string[] = [];
+    let ptyReady = false;
+    const pty: TerminalSidecarChannel = {
+      send: vi.fn(async () => ({ ok: true, result: { data: {} } })),
+      stream: vi.fn(),
+    };
+    const provider: TerminalSidecarChannel = {
+      send: vi.fn(async () => ({ ok: true, result: { data: {} } })),
+      stream: vi.fn(),
+    };
+    const binding = createTerminalSessionBinding({
+      windowLabel: () => "window-a",
+      sidecar: {
+        open: async (name) => {
+          opened.push(name);
+          if (name === "pty") {
+            ptyReady = true;
+            return pty;
+          }
+          if (!ptyReady) throw new Error("PTY token unreadable");
+          return provider;
+        },
+      },
+    }, { ptySidecarId: "pty", terminalSidecarId: "provider" });
+
+    await expect(binding.recoveryRequest({ op: "status" })).resolves.toMatchObject({ ok: true });
+    expect(opened).toEqual(["pty", "provider"]);
+  });
+
   it("closes every session stream and sidecar handle when its plugin generation is disposed", async () => {
     const streamClose = vi.fn();
     const ptyClose = vi.fn(async () => {});
