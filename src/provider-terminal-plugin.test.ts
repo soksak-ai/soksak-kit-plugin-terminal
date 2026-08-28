@@ -286,6 +286,81 @@ describe("provider-backed terminal plugin", () => {
     }
   });
 
+  it("copies, bracket-pastes, and redeems file drops with public state and events", async () => {
+    let view: View | undefined;
+    const commands = new Map<string, Record<string, unknown>>();
+    const { channel, requests } = fakeSidecars();
+    const writeText = vi.fn(async () => {});
+    const readText = vi.fn(async () => "붙여넣기");
+    const redeem = vi.fn(async (id: string) => id === "grant-file"
+      ? { kind: "file" as const, shellText: "'/tmp/a b'" }
+      : id === "grant-image"
+        ? { kind: "image" as const, shellText: "'/tmp/image.png'", inline: { protocol: "kitty", data: "image" } }
+        : null);
+    const events: string[] = [];
+    const host: ProviderTerminalPluginHost = {
+      windowLabel: () => "window",
+      secrets: { generate: async () => ({ created: true }) },
+      sidecar: { open: async () => channel as never },
+      clipboard: { readText, writeText },
+      fileGrants: { redeem },
+      ui: { registerView: (_id, provider) => { view = provider; return { dispose() {} }; } },
+      commands: {
+        register: (name, spec) => { commands.set(name, spec); return { dispose() {} }; },
+        execute: async () => ({ data: { loginShell: "/bin/zsh" } }),
+      },
+    };
+    activateProviderTerminalPlugin(host, [], {
+      pluginId: "plugin", engineId: "vt100", ptySidecarId: "soksak-sidecar-pty",
+      terminalSidecarId: "soksak-sidecar-terminal-vt100", programId: "terminal-vt100",
+      presenter: (root) => ({
+        root, size: () => ({ cols: 80, rows: 24 }), read: () => "screen",
+        selection: () => "selected", modes: () => ({ bracketedPaste: true }),
+        waitForText: async () => "screen", focus: () => true, dispose() {},
+      }),
+    });
+    const root = document.createElement("div");
+    for (const event of [
+      "soksak:terminal-clipboard-copied", "soksak:terminal-clipboard-pasted",
+      "soksak:terminal-drop-accepted", "soksak:terminal-drop-refused",
+    ]) root.addEventListener(event, () => events.push(event));
+    document.body.append(root);
+    view!.mount(root, { viewId: "pane" });
+    await vi.waitFor(() => expect(root.dataset.terminalPhase).toBe("live"));
+    const call = (name: string, params: Record<string, unknown> = {}) =>
+      Promise.resolve((commands.get(name)!.handler as Handler)({ view: "pane", ...params }, { pane: "pane" }));
+    const decode = (value: unknown) => new TextDecoder().decode(
+      Uint8Array.from(atob(String(value)), (character) => character.charCodeAt(0)),
+    );
+
+    await expect(call("copy")).resolves.toEqual({ pane: "pane.1", text: "selected", copied: true });
+    expect(writeText).toHaveBeenCalledWith("selected");
+    await expect(call("paste")).resolves.toMatchObject({ pane: "pane.1", pasted: true });
+    const pasted = requests.filter((request) => request.command === "pty.write").at(-1)?.payload.dataB64;
+    expect(decode(pasted)).toBe("\x1b[200~붙여넣기\x1b[201~");
+    await expect(call("drop", { grants: ["grant-file", "missing"], mode: "path" }))
+      .resolves.toEqual({ pane: "pane.1", accepted: 1, mode: "path" });
+    const dropped = requests.filter((request) => request.command === "pty.write").at(-1)?.payload.dataB64;
+    expect(decode(dropped)).toBe("'/tmp/a b' ");
+    await expect(call("drop", { grants: ["grant-image"], mode: "inline" }))
+      .resolves.toEqual({ pane: "pane.1", accepted: 0, mode: "inline" });
+    expect(events).toEqual([
+      "soksak:terminal-clipboard-copied", "soksak:terminal-clipboard-pasted",
+      "soksak:terminal-drop-accepted", "soksak:terminal-drop-refused",
+    ]);
+    const drop = root.querySelector<HTMLElement>('[data-node="terminal-drop-target/1"]')!;
+    expect(drop.dataset.fileGrantState).toBe("available");
+    expect(JSON.parse(drop.dataset.lastDrop ?? "null")).toEqual({ accepted: 0, refused: 1, mode: "inline" });
+    await expect(call("status")).resolves.toMatchObject({
+      presentation: {
+        bracketedPaste: true,
+        selection: { active: true, text: "selected" },
+        clipboardPermission: { read: true, write: true },
+        drop: { fileGrantState: "available", last: { accepted: 0, refused: 1, mode: "inline" } },
+      },
+    });
+  });
+
   it("opens the engine sidecar the setting selects; the plugin's engine is the default", async () => {
     const opened: string[] = [];
     const run = async (engine: string | undefined) => {
