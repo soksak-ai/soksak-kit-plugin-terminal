@@ -1,7 +1,7 @@
 # soksak-kit-plugin-terminal
 
 Reusable browser-side implementation for terminal plugins implementing
-`soksak-spec-plugin-terminal` 0.0.8.
+`soksak-spec-plugin-terminal` 0.0.12.
 
 The kit owns view registration, PTY and recovery lifecycle, resizing, public status, and every
 command required by the terminal plugin contract. A plugin may supply a renderer adapter for engine
@@ -19,6 +19,16 @@ implementation; a plugin must not keep a private terminal theme map.
 The public screen also carries all 256 contract palette entries as indexed CSS custom properties,
 allowing installed-product parity checks to read computed style without treating screenshots as an
 automated oracle.
+
+## Clipboard and file drops
+
+Selection, copy, paste and drop are common Kit behavior. Copy and implicit paste use only the host
+clipboard capability. Paste wraps text with bracketed-paste markers only when the active presenter
+reports that engine mode. A file drop accepts opaque host grants; redemption supplies shell-quoted
+text, so a command cannot inject a raw path as a grant. Inline mode runs only through a presenter
+capability and never falls back to path input. The pane exposes `terminal-drop-target`, clipboard
+permission, selection, bracketed-paste mode and the last accepted/refused drop in status, DOM data
+and events.
 
 ## What a pane does when it loses its terminal
 
