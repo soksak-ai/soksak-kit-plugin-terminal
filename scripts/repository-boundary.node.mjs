@@ -125,6 +125,16 @@ test("Makefile packs and publishes with pnpm from command-line OUT and REGISTRY"
   refused(run(["verify"], { OUT: "/nonexistent/out" }), /OUT.*environment/);
 });
 
+test("Makefile owns deterministic lockfile regeneration", () => {
+  assert.match(makefile, /^lock: guard preflight$/m);
+  assert.match(makefile, /pnpm install --lockfile-only \$\(if \$\(findstring command line,\$\(origin REGISTRY\)\),\$\(registry_flags\)\)/);
+  for (const name of ["README.md", "README.ko.md"]) {
+    assert.match(readFileSync(join(root, name), "utf8"), /^make lock REGISTRY=http:\/\/host:port\/$/m, name);
+  }
+  refused(run(["lock"]), /REGISTRY required/);
+  refused(run(["lock"], { REGISTRY: "http://127.0.0.1:4873" }), /REGISTRY.*environment/);
+});
+
 test("the package configures only the npm scope it consumes", () => {
   for (const name of ["Makefile", "README.md", "README.ko.md", "package.json", "pnpm-lock.yaml"]) {
     assert.doesNotMatch(readFileSync(join(root, name), "utf8"), /@soksak-ai/);
