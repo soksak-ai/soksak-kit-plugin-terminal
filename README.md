@@ -1,7 +1,7 @@
 # soksak-kit-plugin-terminal
 
 Reusable browser-side implementation for terminal plugins implementing
-`soksak-spec-plugin-terminal` 0.0.13.
+`soksak-spec-plugin-terminal` 0.0.14.
 
 The kit owns view registration, PTY and recovery lifecycle, resizing, public status, and every
 command required by the terminal plugin contract. A plugin may supply a renderer adapter for engine
@@ -19,6 +19,11 @@ implementation; a plugin must not keep a private terminal theme map.
 The public screen also carries all 256 contract palette entries as indexed CSS custom properties,
 allowing installed-product parity checks to read computed style without treating screenshots as an
 automated oracle.
+
+A native surface presenter publishes engine-driven presentation changes through
+`TerminalPresenter.onPresentationChanged`. The Kit reads the already exposed terminal DOM state
+and emits the common terminal status event at that edge. It does not poll a native presenter or
+parse terminal output again.
 
 ## Clipboard and file drops
 
