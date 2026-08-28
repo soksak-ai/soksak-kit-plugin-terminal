@@ -1,7 +1,7 @@
 # soksak-kit-plugin-terminal
 
 Reusable browser-side implementation for terminal plugins implementing
-`soksak-spec-plugin-terminal` 0.0.14.
+`soksak-spec-plugin-terminal` 0.0.15.
 
 The kit owns view registration, PTY and recovery lifecycle, resizing, public status, and every
 command required by the terminal plugin contract. A plugin may supply a renderer adapter for engine
@@ -11,19 +11,17 @@ Status reports host pixels, requested size, PTY observation, recovery observatio
 Layout updates consume both `ResizeObserver` and the host's post-commit `layout.reflow` event. Both
 signals enter the same serial resize worker; no interval or retry path exists.
 
-The kit is also the only browser-side owner of terminal theme resolution. It maps the contract's
-five semantic roles from the host's public tokens, applies them to `terminal-screen`, publishes the
-resolved values through `presentation.theme`, and exposes cursor, cursor-accent, and selection as
-the contract-declared CSS properties. Frame renderers and byte-renderer adapters consume this same
-implementation; a plugin must not keep a private terminal theme map.
-The public screen also carries all 256 contract palette entries as indexed CSS custom properties,
-allowing installed-product parity checks to read computed style without treating screenshots as an
-automated oracle.
+The kit is the browser-side owner of terminal theme publication. It reads the explicit host
+`light|dark` mode and contract tokens, validates presenter state, and publishes `themeMode`,
+`baseTheme`, `terminalOverrides` and `effectiveTheme` through status, DOM data and
+`soksak:terminal-colors`. `terminal-screen` receives the effective semantic colors and all 256
+indexed colors as CSS properties. A plugin does not keep a private theme map or infer override
+presence by comparing effective colors.
 
 A native surface presenter publishes engine-driven presentation changes through
-`TerminalPresenter.onPresentationChanged`. The Kit reads the already exposed terminal DOM state
-and emits the common terminal status event at that edge. It does not poll a native presenter or
-parse terminal output again.
+`TerminalPresenter.onPresentationChanged` and exposes the same state through `themeStatus`. The
+host's one `data-theme-epoch` mutation calls `setTheme`; the applied state then reaches status and
+DOM at the presentation edge. No presenter polling or terminal-output parsing is used.
 
 ## Clipboard and file drops
 

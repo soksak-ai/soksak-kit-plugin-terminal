@@ -1,6 +1,6 @@
 # soksak-kit-plugin-terminal
 
-`soksak-spec-plugin-terminal` 0.0.13을 구현하는 터미널 플러그인의 공통 브라우저 구현입니다.
+`soksak-spec-plugin-terminal` 0.0.15를 구현하는 터미널 플러그인의 공통 브라우저 구현입니다.
 
 이 kit가 view 등록, PTY 및 복원 수명 주기, 크기 변경, 공개 상태와 터미널 계약의 모든
 표준 명령을 소유합니다. 플러그인은 엔진별 렌더링, 입력, IME, focus와 snapshot 적용을
@@ -17,6 +17,15 @@ renderer adapter로 제공할 수 있지만 수명 주기나 표준 명령을 �
 없습니다.
 
 플러그인은 자신의 매니페스트, 엔진 식별자, renderer adapter와 추가 명령을 소유합니다.
+
+이 Kit은 browser-side terminal theme 게시를 소유합니다. Host의 명시적인 `light|dark` mode와
+contract token을 읽고 presenter 상태를 검증한 뒤 `themeMode`, `baseTheme`,
+`terminalOverrides`, `effectiveTheme`을 status·DOM data·`soksak:terminal-colors`로 게시합니다.
+`terminal-screen`에는 effective semantic color와 indexed color 256개를 CSS property로
+설정합니다. Plugin은 private theme map을 두거나 effective color 비교로 override 존재를
+추측하지 않습니다. Native presenter는 `themeStatus`와 `onPresentationChanged`로 engine
+상태를 게시하고 host의 `data-theme-epoch` event에서 `setTheme`을 받습니다. Polling과 terminal
+output 재parse는 사용하지 않습니다.
 
 ## Clipboard와 file drop
 
