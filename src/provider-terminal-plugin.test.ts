@@ -293,9 +293,9 @@ describe("provider-backed terminal plugin", () => {
     const writeText = vi.fn(async () => {});
     const readText = vi.fn(async () => "붙여넣기");
     const redeem = vi.fn(async (id: string) => id === "grant-file"
-      ? { kind: "file" as const, shellText: "'/tmp/a b'" }
+      ? { kind: "file" as const, path: "/tmp/a b" }
       : id === "grant-image"
-        ? { kind: "image" as const, shellText: "'/tmp/image.png'", inline: { protocol: "kitty", data: "image" } }
+        ? { kind: "image" as const, path: "/tmp/image.png" }
         : null);
     const events: string[] = [];
     let onDropped: ((payload: { paneId: string | null; grants: Array<{ id: string; kind: "file" | "image" }> }) => void) | undefined;
