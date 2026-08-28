@@ -10,6 +10,8 @@ standard commands. Optional plugin commands are registered as explicit extension
 Status reports host pixels, requested size, PTY observation, recovery observation and rendered size.
 Layout updates consume both `ResizeObserver` and the host's post-commit `layout.reflow` event. Both
 signals enter the same serial resize worker; no interval or retry path exists.
+Presenter text reads may be synchronous or asynchronous. The standard `read` command awaits the
+result and publishes only `{text:string}`; an IPC Promise never leaks into command status.
 
 The kit is the browser-side owner of terminal theme publication. It reads the explicit host
 `light|dark` mode and contract tokens, validates presenter state, and publishes `themeMode`,

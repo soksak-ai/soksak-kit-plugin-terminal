@@ -12,6 +12,8 @@ renderer adapter로 제공할 수 있지만 수명 주기나 표준 명령을 �
 크기 변경 작업은 한 번에 하나만 실행하며 진행 중 요청은 다음 최신 작업 한 번으로
 병합합니다. wait는 현재 확정 상태를 먼저 검사하고 충족되지 않을 때만 사건을
 구독합니다.
+Presenter text read는 sync 또는 async일 수 있습니다. 표준 `read` command는 결과를 await하고
+`{text:string}`만 게시하므로 IPC Promise가 command status로 노출되지 않습니다.
 레이아웃 변경은 `ResizeObserver`와 호스트의 commit 이후 `layout.reflow` 사건을 함께
 소비합니다. 두 신호는 같은 직렬 resize worker로 들어가며 주기 조회나 retry 경로는
 없습니다.
