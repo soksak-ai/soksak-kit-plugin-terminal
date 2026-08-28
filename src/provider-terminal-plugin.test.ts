@@ -298,12 +298,19 @@ describe("provider-backed terminal plugin", () => {
         ? { kind: "image" as const, shellText: "'/tmp/image.png'", inline: { protocol: "kitty", data: "image" } }
         : null);
     const events: string[] = [];
+    let onDropped: ((payload: { paneId: string | null; grants: Array<{ id: string; kind: "file" | "image" }> }) => void) | undefined;
     const host: ProviderTerminalPluginHost = {
       windowLabel: () => "window",
       secrets: { generate: async () => ({ created: true }) },
       sidecar: { open: async () => channel as never },
       clipboard: { readText, writeText },
       fileGrants: { redeem },
+      events: {
+        on: ((event: string, callback: (payload: never) => void) => {
+          if (event === "paths.dropped") onDropped = callback as typeof onDropped;
+          return { dispose() {} };
+        }) as ProviderTerminalPluginHost["events"] extends { on: infer On } ? On : never,
+      } as ProviderTerminalPluginHost["events"],
       ui: { registerView: (_id, provider) => { view = provider; return { dispose() {} }; } },
       commands: {
         register: (name, spec) => { commands.set(name, spec); return { dispose() {} }; },
@@ -358,6 +365,15 @@ describe("provider-backed terminal plugin", () => {
         clipboardPermission: { read: true, write: true },
         drop: { fileGrantState: "available", last: { accepted: 0, refused: 1, mode: "inline" } },
       },
+    });
+    const writesBeforeEvent = requests.filter((request) => request.command === "pty.write").length;
+    onDropped?.({ paneId: "pane", grants: [{ id: "grant-file", kind: "file" }] });
+    await vi.waitFor(() => {
+      const writes = requests.filter((request) => request.command === "pty.write");
+      expect(writes.length).toBe(writesBeforeEvent + 1);
+      const eventDrop = writes.at(-1)?.payload.dataB64;
+      expect(decode(eventDrop)).toBe("'/tmp/a b' ");
+      expect(events.at(-1)).toBe("soksak:terminal-drop-accepted");
     });
   });
 
@@ -537,10 +553,10 @@ describe("provider-backed terminal plugin", () => {
     const host: ProviderTerminalPluginHost = {
       windowLabel: () => "window", secrets: { generate: async () => ({ created: true }) },
       sidecar: { open: async (name) => name === "soksak-sidecar-pty" ? pty : provider },
-      events: { on: (event: "layout.reflow" | "window.gone", callback: (() => void) | ((payload: { windowLabel?: string }) => void)) => {
+      events: { on: ((event: string, callback: (() => void) | ((payload: { windowLabel?: string }) => void)) => {
         if (event === "layout.reflow") reflow = callback as () => void;
         return { dispose() {} };
-      } },
+      }) as ProviderTerminalPluginHost["events"] extends { on: infer On } ? On : never } as ProviderTerminalPluginHost["events"],
       ui: { registerView: (_id, item) => { view = item; return { dispose() {} }; } },
       commands: { register: () => ({ dispose() {} }), execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
     };
