@@ -14,6 +14,8 @@ renderer adapter로 제공할 수 있지만 수명 주기나 표준 명령을 �
 구독합니다.
 Presenter text read는 sync 또는 async일 수 있습니다. 표준 `read` command는 결과를 await하고
 `{text:string}`만 게시하므로 IPC Promise가 command status로 노출되지 않습니다.
+Selection read도 같은 경계를 따릅니다. `selection`과 `copy`는 native presenter를 await하고 resolve된
+문자열만 게시하거나 복사합니다. 거부된 engine selection을 stale 또는 빈 성공으로 바꾸지 않습니다.
 레이아웃 변경은 `ResizeObserver`와 호스트의 commit 이후 `layout.reflow` 사건을 함께
 소비합니다. 두 신호는 같은 직렬 resize worker로 들어가며 주기 조회나 retry 경로는
 없습니다.

@@ -325,7 +325,7 @@ describe("provider-backed terminal plugin", () => {
       terminalSidecarId: "soksak-sidecar-terminal-vt100", programId: "terminal-vt100",
       presenter: (root) => ({
         root, size: () => ({ cols: 80, rows: 24 }), read: () => "screen",
-        selection: () => "selected", modes: () => ({ bracketedPaste: true }),
+        selection: async () => "selected", modes: () => ({ bracketedPaste: true }),
         waitForText: async () => "screen", focus: () => true, dispose() {},
       }),
     });

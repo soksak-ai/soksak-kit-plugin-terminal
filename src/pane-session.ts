@@ -35,7 +35,7 @@ export interface TerminalPresenter {
   sendText?(data: string): Promise<void>;
   renderedOutputSequence?(): number | null;
   read(lines?: number): string | Promise<string>;
-  selection?(): string;
+  selection?(): string | Promise<string>;
   compose?(updates: string[], data: string): number;
   modes?(): ProviderFrameModes;
   presentInlineImage?(image: { protocol: string; data: string }): Promise<boolean> | boolean;

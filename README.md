@@ -12,6 +12,9 @@ Layout updates consume both `ResizeObserver` and the host's post-commit `layout.
 signals enter the same serial resize worker; no interval or retry path exists.
 Presenter text reads may be synchronous or asynchronous. The standard `read` command awaits the
 result and publishes only `{text:string}`; an IPC Promise never leaks into command status.
+Selection reads follow the same boundary: `selection` and `copy` await a native presenter and
+publish or copy only the resolved string. A rejected engine selection is not replaced with a stale
+or empty success.
 
 The kit is the browser-side owner of terminal theme publication. It reads the explicit host
 `light|dark` mode and contract tokens, validates presenter state, and publishes `themeMode`,
