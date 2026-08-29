@@ -163,7 +163,7 @@ describe("pane session", () => {
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
     emit(1, new Uint8Array([1]));
     await vi.waitFor(() => expect(pane.historySize).toBe(100));
-    await expect(pane.scroll({ lines: 10 })).resolves.toEqual({ pane: "tab-a.2", offset: 10, historySize: 100 });
+    await expect(pane.scroll({ lines: 10 })).resolves.toEqual({ pane: "tab-a.2", offset: 10, historySize: 100, followMode: "pinned" });
     const forced = recovery.filter((request) => request.op === "frame").at(-1)!;
     expect(forced).toMatchObject({ offset: 10 });
     expect(forced).not.toHaveProperty("afterSequence");
@@ -342,10 +342,10 @@ describe("scrolling a byte-delivery pane", () => {
     });
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
     expect({ offset: pane.offset, historySize: pane.historySize }).toEqual({ offset: 0, historySize: 120 });
-    await expect(pane.scroll({ lines: 40 })).resolves.toMatchObject({ offset: 40, historySize: 120 });
+    await expect(pane.scroll({ lines: 40 })).resolves.toMatchObject({ offset: 40, historySize: 120, followMode: "pinned" });
     expect({ offset: pane.offset, historySize: pane.historySize }).toEqual({ offset: 40, historySize: 120 });
     await expect(pane.scroll({ edge: "top" })).resolves.toMatchObject({ offset: 120 });
-    await expect(pane.scroll({ edge: "bottom" })).resolves.toMatchObject({ offset: 0 });
+    await expect(pane.scroll({ edge: "bottom" })).resolves.toMatchObject({ offset: 0, followMode: "follow" });
     await expect(pane.scroll({ offset: 500 })).resolves.toMatchObject({ offset: 120 });
   });
 });
@@ -815,7 +815,7 @@ describe("surface delivery", () => {
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
     expect(pane.renderedOutputSequence).toBe(42);
     const moved = await pane.scroll({ lines: 10 });
-    expect(moved).toEqual({ pane: "tab-a.2", offset: 10, historySize: 100 });
+    expect(moved).toEqual({ pane: "tab-a.2", offset: 10, historySize: 100, followMode: "pinned" });
     expect(created().state.offset).toBe(10);
   });
 

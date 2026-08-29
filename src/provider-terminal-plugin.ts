@@ -126,7 +126,7 @@ const paneSummary = (pane: PaneSession): TerminalPaneSummary => {
   const size = pane.presenter.size();
   return {
     pane: pane.key, engineId: pane.engineId, phase: pane.status.current().phase,
-    cols: size.cols, rows: size.rows, offset: pane.offset, historySize: pane.historySize,
+    cols: size.cols, rows: size.rows, offset: pane.offset, historySize: pane.historySize, followMode: pane.followMode,
     title: pane.title, cwd: pane.cwd(),
   };
 };
@@ -539,7 +539,7 @@ export function activateProviderTerminalPlugin(
     edge: { type: "string", enum: ["top", "bottom"], description: { en: "Jump to an edge", ko: "가장자리로 이동" } },
   }), async (params, context) => {
     const found = target(params, context);
-    if (!found) return { pane: null, offset: 0, historySize: 0 };
+    if (!found) return { pane: null, offset: 0, historySize: 0, followMode: "follow" };
     return found.pane.scroll({
       ...(typeof params.lines === "number" ? { lines: params.lines } : {}),
       ...(typeof params.offset === "number" ? { offset: params.offset } : {}),

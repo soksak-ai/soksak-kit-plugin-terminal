@@ -122,13 +122,14 @@ export interface PaneSession {
   readonly renderedOutputSequence: number | null;
   readonly offset: number;
   readonly historySize: number;
+  readonly followMode: "follow" | "pinned";
   readonly lastOutputAtUnixMs: number | null;
   title: string | null;
   hostPixels(): { width: number; height: number };
   write(data: string): Promise<void>;
   sendInput(data: string): void;
   onInput(listener: (text: string) => void): { dispose(): void };
-  scroll(request: PaneScrollRequest): Promise<{ pane: string; offset: number; historySize: number }>;
+  scroll(request: PaneScrollRequest): Promise<{ pane: string; offset: number; historySize: number; followMode: "follow" | "pinned" }>;
   waitIdle(idleMs: number, timeoutMs: number): Promise<void>;
   lastCwdReport(): Uint8Array | null;
   cwd(): string | null;
@@ -836,6 +837,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     },
     get offset() { return presenter.scrollState?.().offset ?? offset; },
     get historySize() { return presenter.scrollState?.().historySize ?? historySize; },
+    get followMode() { return (presenter.scrollState?.().offset ?? offset) === 0 ? "follow" : "pinned"; },
     get lastOutputAtUnixMs() { return lastOutputAt; },
     get title() { return title; },
     set title(value: string | null) { title = value; },
@@ -858,7 +860,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
         else if (typeof request.offset === "number") presenter.scrollTo?.(bounded(request.offset));
         else if (typeof request.lines === "number") presenter.scrollLines?.(request.lines);
         const moved = presenter.scrollState();
-        return { pane: key, offset: moved.offset, historySize: moved.historySize };
+        return { pane: key, offset: moved.offset, historySize: moved.historySize, followMode: moved.offset === 0 ? "follow" : "pinned" };
       }
       const clamp = (value: number) => Math.max(0, Math.min(historySize, Math.floor(value)));
       if (request.edge === "top") offset = historySize;
@@ -870,7 +872,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
         if (renderingTask) await renderingTask.catch(() => {});
         await renderLatest().catch(reportFrameFailure);
       }
-      return { pane: key, offset, historySize };
+      return { pane: key, offset, historySize, followMode: offset === 0 ? "follow" : "pinned" };
     },
     waitIdle(idleMs, timeoutMs) {
       return new Promise<void>((resolve, reject) => {

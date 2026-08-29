@@ -883,7 +883,7 @@ describe("provider-backed terminal plugin", () => {
     const byView = await call("status", { view: "tab-a" });
     expect(byView).toMatchObject({ view: "tab-a", pane: "tab-a.2" });
     expect((byView.panes as Array<{ pane: string }>).map((pane) => pane.pane)).toEqual(["tab-a.1", "tab-a.2"]);
-    expect((byView.panes as Array<Record<string, unknown>>)[0]).toMatchObject({ engineId: "vt100", offset: 0, historySize: 0, title: null });
+    expect((byView.panes as Array<Record<string, unknown>>)[0]).toMatchObject({ engineId: "vt100", offset: 0, historySize: 0, followMode: "follow", title: null });
     expect(await call("status", { pane: "tab-a.1" })).toMatchObject({ pane: "tab-a.1", view: "tab-a" });
     expect(await call("status", {}, { pane: "tab-a" })).toMatchObject({ pane: "tab-a.2" });
     expect(await call("status", { pane: "tab-b.1" })).toMatchObject({ phase: "closed", pane: null, panes: [] });
@@ -902,7 +902,7 @@ describe("provider-backed terminal plugin", () => {
     await expect(call("pane.resize", { pane: "tab-a.1", side: "right", px: 10 })).resolves.toEqual({ applied: true });
     await expect(call("pane.resize", { pane: "tab-a.1", side: "bottom", px: 10 })).resolves.toEqual({ applied: false });
     await expect(call("selection", { pane: "tab-a.1" })).resolves.toEqual({ pane: "tab-a.1", text: "" });
-    await expect(call("scroll", { pane: "tab-a.1", lines: 5 })).resolves.toEqual({ pane: "tab-a.1", offset: 0, historySize: 0 });
+    await expect(call("scroll", { pane: "tab-a.1", lines: 5 })).resolves.toEqual({ pane: "tab-a.1", offset: 0, historySize: 0, followMode: "follow" });
     await expect(call("wait", { pane: "tab-a.1", phase: "live", idleMs: 20, timeoutMs: 1000 })).resolves.toMatchObject({ phase: "live", pane: "tab-a.1" });
     expect(await call("input.compose", { pane: "tab-a.1", updates: ["ㅎ"], data: "한" })).toEqual({ emitted: 4 });
     await vi.waitFor(() => expect(requests.some((item) => item.command === "pty.write")).toBe(true));
