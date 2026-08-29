@@ -457,6 +457,11 @@ export function createWorkbench(root: HTMLElement, paneSet: WorkbenchPaneSet, op
     element: root, resized: () => layout(true), events: options.events,
     createResizeObserver: options.createResizeObserver,
   });
+  // A view can be constructed before its host slot is inserted into the document. The synchronous
+  // layout above then measures a zero-sized root, and some hosts do not emit a ResizeObserver entry
+  // for that initial insertion. The first animation frame is the browser's layout edge: remeasure
+  // once there, without a timer or polling loop.
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => layout(true));
   root.addEventListener("keydown", onKeyDown, true);
 
   return {

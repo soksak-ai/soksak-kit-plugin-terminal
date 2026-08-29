@@ -71,6 +71,33 @@ function fixture(restore?: unknown) {
 }
 
 describe("workbench", () => {
+  it("remeasures after a zero-sized pre-insertion layout on the first frame", () => {
+    let width = 0;
+    let height = 0;
+    let frame!: FrameRequestCallback;
+    const previous = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = (callback: FrameRequestCallback) => {
+      frame = callback;
+      return 1;
+    };
+    try {
+      const root = document.createElement("div");
+      Object.defineProperty(root, "clientWidth", { get: () => width });
+      Object.defineProperty(root, "clientHeight", { get: () => height });
+      document.body.append(root);
+      const { set, panes } = fakePaneSet("tab-frame");
+      createWorkbench(root, set, {
+        viewId: "tab-frame", createResizeObserver: () => ({ observe() {}, disconnect() {} }),
+      });
+      expect(panes.get("tab-frame.1")!.hostPixels!()).toEqual({ width: 0, height: 0 });
+      width = 800; height = 400;
+      frame(0);
+      expect(panes.get("tab-frame.1")!.hostPixels!()).toEqual({ width: 800, height: 400 });
+    } finally {
+      globalThis.requestAnimationFrame = previous;
+    }
+  });
+
   it("splits into a second pane node whose width plus the gutter completes the root", () => {
     const { set, workbench, node, width } = fixture();
     expect(node("pane/1")).not.toBeNull();
