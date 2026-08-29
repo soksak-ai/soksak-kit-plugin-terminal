@@ -834,8 +834,8 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     get renderedOutputSequence() {
       return surfaceDelivery ? presenter.renderedOutputSequence?.() ?? null : renderedSequence;
     },
-    get offset() { return offset; },
-    get historySize() { return historySize; },
+    get offset() { return presenter.scrollState?.().offset ?? offset; },
+    get historySize() { return presenter.scrollState?.().historySize ?? historySize; },
     get lastOutputAtUnixMs() { return lastOutputAt; },
     get title() { return title; },
     set title(value: string | null) { title = value; },

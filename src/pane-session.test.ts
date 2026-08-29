@@ -341,7 +341,9 @@ describe("scrolling a byte-delivery pane", () => {
       },
     });
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    expect({ offset: pane.offset, historySize: pane.historySize }).toEqual({ offset: 0, historySize: 120 });
     await expect(pane.scroll({ lines: 40 })).resolves.toMatchObject({ offset: 40, historySize: 120 });
+    expect({ offset: pane.offset, historySize: pane.historySize }).toEqual({ offset: 40, historySize: 120 });
     await expect(pane.scroll({ edge: "top" })).resolves.toMatchObject({ offset: 120 });
     await expect(pane.scroll({ edge: "bottom" })).resolves.toMatchObject({ offset: 0 });
     await expect(pane.scroll({ offset: 500 })).resolves.toMatchObject({ offset: 120 });
