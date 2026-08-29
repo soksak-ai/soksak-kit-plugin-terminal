@@ -201,10 +201,19 @@ export function createProviderFramePresenter(
   };
   input.addEventListener("focus", updateCursor);
   input.addEventListener("blur", updateCursor);
-  screen.addEventListener("mousedown", (event) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    input.focus({ preventScroll: true });
+  let pointerDown: { x: number; y: number } | null = null;
+  screen.addEventListener("pointerdown", (event) => {
+    if (event.button === 0) pointerDown = { x: event.clientX, y: event.clientY };
+  });
+  screen.addEventListener("pointerup", (event) => {
+    if (event.button !== 0 || pointerDown === null) return;
+    const moved = event.clientX !== pointerDown.x || event.clientY !== pointerDown.y;
+    pointerDown = null;
+    // Let the browser finish a real drag selection. Focusing the hidden input after that would
+    // collapse the range and make copy return an empty string. A stationary click has no range and
+    // transfers focus to the input for typing.
+    const selection = document.getSelection();
+    if (!moved && (!selection || selection.isCollapsed)) input.focus({ preventScroll: true });
   });
   const metrics = () => {
     const box = options.probe ? options.probe(probe) : probe.getBoundingClientRect();

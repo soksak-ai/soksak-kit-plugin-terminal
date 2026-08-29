@@ -823,7 +823,8 @@ describe("provider-backed terminal plugin", () => {
     expect(status).not.toHaveProperty("cols");
     const screen = root.querySelector<HTMLElement>('[data-node="terminal-screen/1"]')!;
     const input = root.querySelector<HTMLTextAreaElement>('[data-node="terminal-input/1"]')!;
-    screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    screen.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: 1, clientY: 1 }));
+    screen.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: 0, clientX: 1, clientY: 1 }));
     input.value = "x";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.value = "y";

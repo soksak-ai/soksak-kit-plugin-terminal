@@ -26,13 +26,14 @@ describe("provider frame presenter", () => {
     presenter.input.value = "x"; presenter.input.dispatchEvent(new Event("input")); expect(send).toHaveBeenCalledWith("x");
   });
 
-  it("transfers a real screen click to the terminal input owner", () => {
+  it("transfers a stationary screen click to the terminal input owner without blocking selection", () => {
     const root = document.createElement("div"); document.body.append(root);
     const presenter = createProviderFramePresenter(root, vi.fn());
     presenter.render({ cols: 1, rows: 1, cursor: [0, 0], cursorVisible: true, altActive: false, full: true, lines: [{ y: 0, wrapped: false, runs: [] }] });
-    const down = new MouseEvent("mousedown", { bubbles: true, button: 0, cancelable: true });
-    expect(presenter.screen.dispatchEvent(down)).toBe(false);
-    expect(down.defaultPrevented).toBe(true);
+    const down = new PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: 4, clientY: 4 });
+    const up = new PointerEvent("pointerup", { bubbles: true, button: 0, clientX: 4, clientY: 4 });
+    expect(presenter.screen.dispatchEvent(down)).toBe(true);
+    expect(presenter.screen.dispatchEvent(up)).toBe(true);
     expect(document.activeElement).toBe(presenter.input);
     expect(presenter.input.dataset.focused).toBe("true");
     expect(presenter.screen.dataset.cursorActive).toBe("true");
@@ -41,6 +42,25 @@ describe("provider frame presenter", () => {
     expect(presenter.screen.dataset.cursorActive).toBe("false");
     expect(cursor.style.backgroundColor).toBe("var(--card)");
     expect(cursor.style.outline).toContain("var(--soksak-terminal-cursor)");
+  });
+
+  it("does not focus the input after a moved pointer selection", () => {
+    const root = document.createElement("div"); document.body.append(root);
+    const presenter = createProviderFramePresenter(root, vi.fn());
+    presenter.render({ cols: 5, rows: 1, cursor: [0, 0], cursorVisible: false, altActive: false, full: true,
+      lines: [{ y: 0, wrapped: false, runs: [{ text: "hello", fg: "default", bg: "default", attrs: 0 }] }] });
+    presenter.input.blur();
+    const down = new PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: 0, clientY: 0 });
+    const up = new PointerEvent("pointerup", { bubbles: true, button: 0, clientX: 20, clientY: 0 });
+    presenter.screen.dispatchEvent(down);
+    const textNode = presenter.screen.querySelector("div")?.firstChild;
+    if (!textNode) throw new Error("missing rendered selection text");
+    const range = document.createRange(); range.selectNodeContents(textNode);
+    const selection = document.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+    presenter.screen.dispatchEvent(up);
+    expect(document.activeElement).not.toBe(presenter.input);
+    expect(presenter.selection()).toBe("hello");
+    selection.removeAllRanges();
   });
 
   it("uses the canonical palette for indexed colors and host tokens for defaults", () => {
