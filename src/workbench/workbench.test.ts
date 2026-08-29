@@ -54,14 +54,14 @@ function fakePaneSet(viewId = "tab-a") {
   return { set, panes, persisted };
 }
 
-function fixture(restore?: unknown) {
+function fixture(restore?: unknown, initialCwd?: string | null) {
   const root = document.createElement("div");
   Object.defineProperty(root, "clientWidth", { value: 800 });
   Object.defineProperty(root, "clientHeight", { value: 400 });
   document.body.append(root);
   const { set, panes, persisted } = fakePaneSet();
   const workbench = createWorkbench(root, set, {
-    viewId: "tab-a", restore, createResizeObserver: () => ({ observe() {}, disconnect() {} }),
+    viewId: "tab-a", restore, initialCwd, createResizeObserver: () => ({ observe() {}, disconnect() {} }),
   });
   const node = (id: string) => root.querySelector<HTMLElement>(`[data-node="${id}"]`);
   const width = (id: string) => parseFloat(node(id)!.style.width);
@@ -69,6 +69,13 @@ function fixture(restore?: unknown) {
     node(id)!.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true }));
   return { root, set, panes, persisted, workbench, node, width, pointer };
 }
+
+it("opens a new terminal pane at the selected workspace root", () => {
+  const fixtureValue = fixture(undefined, "/work/project");
+  const pane = fixtureValue.panes.values().next().value as FakePane | undefined;
+  expect(pane?.cwd()).toBe("/work/project");
+  fixtureValue.workbench.dispose();
+});
 
 describe("workbench", () => {
   it("remeasures after a zero-sized pre-insertion layout on the first frame", () => {

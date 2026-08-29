@@ -52,6 +52,8 @@ export interface WorkbenchOptions {
   // context.restore.state and context.restore.cwd of the mount.
   restore?: unknown;
   restoreCwd?: string | null;
+  // New panes start at the selected workspace root. A restored pane uses restoreCwd instead.
+  initialCwd?: string | null;
   // "single": one bare pane keyed by the view id, no splitting.
   layout?: "single" | "workbench";
   events?: TerminalLayoutEvents;
@@ -455,7 +457,7 @@ export function createWorkbench(root: HTMLElement, paneSet: WorkbenchPaneSet, op
   } else {
     const key = single ? options.viewId : paneSet.nextKey();
     tree = { type: "leaf", value: key };
-    mountPane(key, { cwd: options.restoreCwd ?? null });
+    mountPane(key, { cwd: options.restoreCwd ?? options.initialCwd ?? null });
     focusedKey = key;
   }
   paneSet.focusPane(focusedKey);

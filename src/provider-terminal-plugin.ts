@@ -250,7 +250,7 @@ export function activateProviderTerminalPlugin(
         engineFor, stopBarriers, restore: saved ? { next: saved.next } : null,
       });
       const workbench = createWorkbench(container, set, {
-        viewId, restore: context.restore?.state, restoreCwd: context.restore?.cwd ?? null,
+        viewId, restore: context.restore?.state, restoreCwd: context.restore?.cwd ?? null, initialCwd: context.root,
         layout: config.layout ?? "workbench", events: host.events,
       });
       for (const pane of set.list()) {
