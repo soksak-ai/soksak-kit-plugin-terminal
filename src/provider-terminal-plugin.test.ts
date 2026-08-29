@@ -63,6 +63,7 @@ function activate(channel: { send: unknown; stream: unknown }) {
 describe("provider-backed terminal plugin", () => {
   it("consumes the terminal contract that declares native wheel delivery", () => {
     expect(TERMINAL_SURFACE_DELIVER_VERBS).toContain("wheel");
+    expect(TERMINAL_SURFACE_DELIVER_VERBS).toContain("pointer");
   });
 
   it("rejects a corrupt archive but starts a fresh writable terminal with visible failure status", async () => {
