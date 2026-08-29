@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { resolveTerminalTheme } from "@soksak/soksak-contract-plugin-terminal";
 import { createPaneSession, defaultTerminalPresenterFactory } from "./pane-session";
 import type { ProviderFrameRun, ProviderFrame } from "./provider-frame-presenter";
@@ -15,6 +17,19 @@ const run = (text: string): ProviderFrameRun => ({ text, fg: "default", bg: "def
 const frameOf = (rows: string[], full = true): ProviderFrame => ({
   full, cols: 4, rows: rows.length, cursor: [0, 0], cursorVisible: false, altActive: false,
   lines: rows.map((text, y) => ({ y, wrapped: false, runs: [run(text)] })).filter((line) => line.runs[0].text !== ""),
+});
+
+describe("terminal visibility ownership contract", () => {
+  it("separates intrinsic pane visibility from host presentation", () => {
+    const pane = readFileSync(resolve(import.meta.dirname, "pane-session.ts"), "utf8");
+    const provider = readFileSync(resolve(import.meta.dirname, "provider-terminal-plugin.ts"), "utf8");
+    const workbench = readFileSync(resolve(import.meta.dirname, "workbench/workbench.ts"), "utf8");
+    expect(pane).toContain("setIntrinsicVisible");
+    expect(pane).toContain("setHostPresentation");
+    expect(provider).toContain("pane.setHostPresentation");
+    expect(workbench).toContain("pane.setIntrinsicVisible");
+    expect(pane).not.toMatch(/setShown\??\(/);
+  });
 });
 
 interface FrameReply { ok: boolean; code?: string; data?: Record<string, unknown>; message?: string }
