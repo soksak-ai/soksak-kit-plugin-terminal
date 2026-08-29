@@ -1,7 +1,7 @@
 {
   "name": "@soksak/soksak-kit-plugin-terminal",
-  "version": "0.0.87",
-  "private": true,
+  "version": "0.0.88",
+  "private": false,
   "engines": {
     "node": "26.7.0"
   },

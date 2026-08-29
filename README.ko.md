@@ -111,11 +111,13 @@ make verify REGISTRY=http://host:port/
 ## 릴리즈
 
 `OUT`과 `COMMIT`은 make 명령줄 인자로만 받습니다. `OUT`은 절대 경로 디렉터리,
-`COMMIT`은 정확한 소문자 Git SHA여야 합니다. 이 kit은 private portable component이며 canonical
-SDK/spec builder가 immutable GitHub release asset을 만듭니다. npm에는 publish하지 않습니다.
+`COMMIT`은 정확한 소문자 Git SHA여야 합니다. 이 kit은 publish 가능한 portable component이며
+canonical SDK/spec builder가 immutable GitHub release asset을 만듭니다. terminal plugin이 version으로
+resolve할 수 있도록 선언된 package registry에도 정확한 package byte를 publish합니다.
 
 ```sh
 make release COMMIT=<exact-git-sha> OUT=/absolute/dir REGISTRY=http://host:port/
+make publish OUT=/absolute/dir REGISTRY=http://host:port/
 ```
 
 `release`는 `verify`를 실행한 뒤 exact SDK로 위임합니다.

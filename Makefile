@@ -1,5 +1,5 @@
 SHELL := /bin/sh
-.PHONY: preflight guard lock prepare build verify require-out release
+.PHONY: preflight guard lock prepare build verify require-out require-registry release publish
 registry_flags = --@soksak:registry=$(REGISTRY) --config.minimum-release-age=0
 # OUT and REGISTRY are accepted from the make command line only ($(origin) must be "command line").
 # GNU make's own environment channels (MAKEFLAGS, GNUMAKEFLAGS, MAKEFILES, -e) are outside this
@@ -26,6 +26,9 @@ verify: prepare
 	@CI=1 PNPM_DISABLE_SELF_UPDATE_CHECK=1 pnpm $(if $(findstring command line,$(origin REGISTRY)),$(registry_flags)) typecheck
 require-out: guard
 	@test "$(origin OUT)" = "command line" || { echo 'OUT must be given on the make command line: make release OUT=/absolute/dir' >&2; exit 64; }
+# Registry is a transport argument, never an ambient setting.
+require-registry: guard
+	@test "$(origin REGISTRY)" = "command line" || { echo 'REGISTRY must be given on the make command line: make publish REGISTRY=http://host:port/' >&2; exit 64; }
 # Portable releases are owned by the exact SDK/spec builder. Kits are private and have no npm
 # publication path; the builder emits release.json and the immutable release asset.
 release: require-out verify
@@ -33,3 +36,7 @@ release: require-out verify
 	@node -e 'if (!/^[a-f0-9]{40}$$/.test(process.argv[1])) process.exit(64)' "$(COMMIT)"
 	@tool="$$(command -v soksak-sdk)"; tooling_root="$$(cd "$$(dirname "$$tool")/.." && pwd -P)"; \
 		soksak-sdk package --root "$(CURDIR)" --spec-root "$$tooling_root/.dependencies/soksak-spec" --commit "$(COMMIT)" --out "$(OUT)"
+
+publish: require-registry require-out release
+	@archive="$$(find "$(OUT)" -maxdepth 1 -type f -name '*.tgz' -print -quit)"; test -n "$$archive" || { echo 'release produced no package archive' >&2; exit 65; }; \
+		CI=1 PNPM_DISABLE_SELF_UPDATE_CHECK=1 pnpm publish "$$archive" --registry "$(REGISTRY)" --@soksak:registry "$(REGISTRY)" --no-git-checks
