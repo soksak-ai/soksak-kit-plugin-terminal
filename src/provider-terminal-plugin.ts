@@ -324,7 +324,7 @@ export function activateProviderTerminalPlugin(
   const publicStatus = async ({ view, pane }: Target): Promise<TerminalPluginViewStatus> => {
     const rendered = pane.presenter.size();
     const current = pane.status.current();
-    const selected = pane.presenter.selection?.() ?? "";
+    const selected = await (pane.presenter.selection?.() ?? "");
     const drop = pane.root.querySelector<HTMLElement>('[data-node^="terminal-drop-target"]');
     let last: TerminalPluginViewStatus["presentation"]["drop"]["last"] = null;
     try {
@@ -544,9 +544,10 @@ export function activateProviderTerminalPlugin(
       ...(params.edge === "top" || params.edge === "bottom" ? { edge: params.edge } : {}),
     });
   });
-  register("selection", scoped(), (params, context) => {
+  register("selection", scoped(), async (params, context) => {
     const found = target(params, context);
-    const result = found ? { pane: found.pane.key, text: found.pane.presenter.selection?.() ?? "" } : { pane: null, text: "" };
+    const text = found ? await (found.pane.presenter.selection?.() ?? "") : "";
+    const result = found ? { pane: found.pane.key, text } : { pane: null, text: "" };
     if (found) {
       found.pane.root.dataset.selectionActive = String(result.text !== "");
       found.pane.root.dataset.selectionText = result.text;
@@ -556,7 +557,7 @@ export function activateProviderTerminalPlugin(
   });
   register("copy", scoped(), async (params, context) => {
     const found = target(params, context);
-    const text = found?.pane.presenter.selection?.() ?? "";
+    const text = found ? await (found.pane.presenter.selection?.() ?? "") : "";
     if (found) {
       found.pane.root.dataset.selectionActive = String(text !== "");
       found.pane.root.dataset.selectionText = text;
