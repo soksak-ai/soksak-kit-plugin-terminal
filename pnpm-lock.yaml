@@ -9,8 +9,8 @@ importers:
   .:
     devDependencies:
       '@soksak/soksak-contract-plugin-terminal':
-        specifier: 0.0.16
-        version: 0.0.16
+        specifier: 0.0.17
+        version: 0.0.17
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -387,8 +387,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@soksak/soksak-contract-plugin-terminal@0.0.16':
-    resolution: {integrity: sha512-ncbxq//QqLaSf8xNh2/M1QtalV5zTZdvt7Xx5d+U3AIQikGXBG2NMyH8LdOT12cfKcIM/GSKvYgbpd7eM65orw==}
+  '@soksak/soksak-contract-plugin-terminal@0.0.17':
+    resolution: {integrity: sha512-iP+75gZzI2AKVbllCWb0Htkq1Qk/3Dcw2HXSka+MhUaIxQmTYzK9LxPMa3Awsds+cq16tYyWuplwglST/k+Rlw==}
     engines: {node: 26.7.0}
 
   '@types/chai@5.2.3':
@@ -961,7 +961,7 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.62.4':
     optional: true
 
-  '@soksak/soksak-contract-plugin-terminal@0.0.16': {}
+  '@soksak/soksak-contract-plugin-terminal@0.0.17': {}
 
   '@types/chai@5.2.3':
     dependencies:
