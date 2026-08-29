@@ -19,9 +19,9 @@ test("repository owns public metadata", () => {
     "git+https://github.com/soksak-ai/soksak-kit-plugin-terminal.git",
   );
   const kit = JSON.parse(readFileSync(join(root, "kit.json"), "utf8"));
-  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.85" });
+  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.84" });
   assert.equal(pkg.version, kit.version);
-  assert.equal(pkg.private, false);
+  assert.equal(pkg.private, true);
   assert.match(pkg.engines.node, /^\d+\.\d+\.\d+$/);
   assert.equal(nodeVersion, pkg.engines.node);
   assert.match(pkg.packageManager, /^pnpm@\d+\.\d+\.\d+$/);
@@ -49,9 +49,9 @@ test("repository owns public metadata", () => {
   assert.match(workflow, /immutable-releases.*enforced_by_owner/);
 });
 
-test("package is a publishable portable component", () => {
+test("package is a private portable component", () => {
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  assert.equal(pkg.private, false);
+  assert.equal(pkg.private, true);
   assert.equal("publishConfig" in pkg, false);
   assert.deepEqual(pkg.files, ["dist", "kit.json", "src", "!src/**/*.test.ts", "LICENSE", "README*"]);
   assert.deepEqual(pkg.exports, { ".": { types: "./src/index.ts", default: "./dist/index.js" } });
@@ -91,7 +91,6 @@ const copyWithOutdatedLockfile = () => {
 
 test("Makefile delegates release to the canonical SDK", () => {
   assert.doesNotMatch(makefile, /\bnpm (pack|publish)\b/);
-  assert.match(makefile, /^publish: guard release$/m);
   assert.doesNotMatch(makefile, /PUBLISH_FLAGS/);
   assert.equal(
     makeVariable("registry_flags"),
