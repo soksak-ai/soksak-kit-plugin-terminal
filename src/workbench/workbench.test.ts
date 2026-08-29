@@ -267,7 +267,7 @@ describe("workbench", () => {
     // Splitting moves focus to the new pane, so maximizing hides the one it came from.
     const hidden = panes.get("tab-a.1")!;
     const shown: boolean[] = [];
-    (hidden as { setShown?: (value: boolean) => void }).setShown = (value: boolean) => { shown.push(value); };
+    (hidden as { setIntrinsicVisible?: (value: boolean) => void }).setIntrinsicVisible = (value: boolean) => { shown.push(value); };
     workbench.toggleMaximize();
     expect(shown.at(-1)).toBe(false);
     workbench.toggleMaximize();

@@ -60,9 +60,15 @@ A pane the layout hides, and every pane of a view the host is not showing, asks 
 sessions and their output are kept, and a frame is asked for again when the pane is shown. Measured
 2026-08-26: a hidden pane went from 195 frames in 4 seconds to none, and the window's rendering
 process from 92.7% to 32.3% of a core.
-Host presentation is the only visibility authority; DOM position and `IntersectionObserver` are
-not visibility signals. When shown again, a frame renderer requests the latest frame and a byte
-renderer redraws its retained buffer once.
+Visibility has two named owners. The Workbench owns `intrinsicVisible` for its own split/maximize
+layout; Core owns `hostVisible` and `dim` for workspace, tab, overlay, and focus presentation.
+`effectiveVisible` is their conjunction and alone controls render work. A native presenter writes
+only `intrinsicVisible` to `data-native-visible`; Core publishes host presentation through the
+view-slot ancestor, so a pre-DOM compositor stage is never vetoed by a duplicate stale host value.
+The four facts are exposed as `data-terminal-intrinsic-visible`, `data-terminal-host-visible`,
+`data-terminal-effective-visible`, and `data-terminal-dim`. DOM position and
+`IntersectionObserver` are not visibility signals. When effectively visible again, a frame
+renderer requests the latest frame and a byte renderer redraws its retained buffer once.
 
 ## Stream sequence rule
 

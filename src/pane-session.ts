@@ -43,10 +43,9 @@ export interface TerminalPresenter {
   focus(): boolean;
   prepareFocusTransfer?(): void;
   refresh?(): void;
-  // A surface renderer draws outside the document; the host's shown state and
-  // dim must reach it or its layer stays painted over every overlay and never
-  // dims. dim is 0..1 — the same fraction the document veil would paint.
-  setShown?(shown: boolean, dim?: number): void;
+  // One complete state, with ownership already separated. A native presenter writes only
+  // intrinsicVisible into data-native-visible; hostVisible is represented by the Core ancestor.
+  setVisibility?(visibility: TerminalVisibilityState): void;
   prepareCapture?(): Promise<void>;
   // A renderer that owns its own scrollback answers where it is and moves on request. offset counts
   // rows back into history, as the terminal contract declares it.
@@ -54,6 +53,13 @@ export interface TerminalPresenter {
   scrollLines?(lines: number): void;
   scrollTo?(offset: number): void;
   dispose(): void;
+}
+
+export interface TerminalVisibilityState {
+  intrinsicVisible: boolean;
+  hostVisible: boolean;
+  effectiveVisible: boolean;
+  dim: number;
 }
 
 export interface TerminalRendererAdapter {
@@ -127,9 +133,11 @@ export interface PaneSession {
   lastCwdReport(): Uint8Array | null;
   cwd(): string | null;
   requestResize(): void;
-  // A pane nobody can see is not painted: it keeps its session and its output and asks for a frame
-  // again when it is shown. dim (0..1) is the focus lighting the host takes off it.
-  setShown(shown: boolean, dim?: number): void;
+  readonly visibility: TerminalVisibilityState;
+  // Workbench layout owns whether this pane exists in the Plugin's own visible arrangement.
+  setIntrinsicVisible(visible: boolean): void;
+  // Core owns whether the whole Plugin view is presented and how much focus lighting dims it.
+  setHostPresentation(visible: boolean, dim: number): void;
   // "detach" keeps the session for the pane to reattach to; "close" ends it with the pane.
   stop(intent?: "detach" | "close"): Promise<void>;
 }
@@ -439,15 +447,32 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     }, 0);
   };
   const outputAhead = () => requestedSequence > (renderedSequence ?? -1);
-  let shown = true;
-  let lastDim = 0;
+  let intrinsicVisible = true;
+  let hostVisible = true;
+  let presentationDim = 0;
+  const visibilityState = (): TerminalVisibilityState => ({
+    intrinsicVisible,
+    hostVisible,
+    effectiveVisible: intrinsicVisible && hostVisible,
+    dim: presentationDim,
+  });
+  const publishVisibility = () => {
+    const value = visibilityState();
+    root.dataset.terminalIntrinsicVisible = String(value.intrinsicVisible);
+    root.dataset.terminalHostVisible = String(value.hostVisible);
+    root.dataset.terminalEffectiveVisible = String(value.effectiveVisible);
+    root.dataset.terminalDim = String(value.dim);
+    presenter.setVisibility?.(value);
+    return value;
+  };
+  publishVisibility();
   // Restarting a session is for one that went away while the pane was working. A pane that keeps
   // failing waits longer between tries, and never stops: what it is waiting for — a unit coming
   // back — is the thing that happens on its own.
   let restartsWithoutProgress = 0;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   const scheduleRenderLatest = () => {
-    if (frameRequest !== null || renderingTask || stopped || !session || !shown || (!frameForced && !outputAhead())) return;
+    if (frameRequest !== null || renderingTask || stopped || !session || !visibilityState().effectiveVisible || (!frameForced && !outputAhead())) return;
     frameRequest = setTimeout(() => {
       frameRequest = null;
       void renderLatest().catch(reportFrameFailure);
@@ -762,7 +787,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   const capturePrepare = (event: Event) => {
     const scope = event.target;
     if (scope instanceof HTMLElement && !scope.contains(root)) return;
-    if (!shown) return;
+    if (!visibilityState().effectiveVisible) return;
     const prepared = presenter.prepareCapture?.();
     if (!prepared) {
       presenter.refresh?.();
@@ -877,17 +902,26 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
         return input.cwd ?? null;
       }
     },
-    setShown(next, dim) {
-      // dim can change while shown does not (focus moving between panes); the
-      // presenter is told every time so a surface renderer re-declares alpha.
-      // A caller that owns only pane visibility (the workbench) names no dim —
-      // the view's last dim stands. Never reset dim to clear by omission.
-      if (dim === undefined) dim = lastDim;
-      else lastDim = dim;
-      presenter.setShown?.(next, dim);
-      if (shown === next) return;
-      shown = next;
-      if (!shown) return;
+    get visibility() { return visibilityState(); },
+    setIntrinsicVisible(next) {
+      if (intrinsicVisible === next) return;
+      const wasEffective = visibilityState().effectiveVisible;
+      intrinsicVisible = next;
+      const current = publishVisibility();
+      if (wasEffective || !current.effectiveVisible) return;
+      if (bytesDelivery || surfaceDelivery) presenter.refresh?.();
+      else { frameForced = true; scheduleRenderLatest(); }
+    },
+    setHostPresentation(next, dim) {
+      if (!Number.isFinite(dim) || dim < 0 || dim > 1) {
+        throw new Error("terminal host presentation dim must be between 0 and 1");
+      }
+      const wasEffective = visibilityState().effectiveVisible;
+      if (hostVisible === next && presentationDim === dim) return;
+      hostVisible = next;
+      presentationDim = dim;
+      const current = publishVisibility();
+      if (wasEffective || !current.effectiveVisible) return;
       if (bytesDelivery || surfaceDelivery) presenter.refresh?.();
       else { frameForced = true; scheduleRenderLatest(); }
     },
