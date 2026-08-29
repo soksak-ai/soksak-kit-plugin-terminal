@@ -116,8 +116,8 @@ make verify REGISTRY=http://host:port/
 
 `OUT` and `COMMIT` are accepted from the make command line only; a value from the environment is
 refused. `OUT` must be an absolute directory and `COMMIT` the exact lowercase Git SHA. This kit is a
-private portable component: its release is built by the canonical SDK/spec builder and published as
-an immutable GitHub release asset. It is not published to npm.
+publishable portable component: its release is built by the canonical SDK/spec builder and published
+to the explicit registry as well as the immutable release store.
 
 ```sh
 make release COMMIT=<exact-git-sha> OUT=/absolute/dir REGISTRY=http://host:port/
