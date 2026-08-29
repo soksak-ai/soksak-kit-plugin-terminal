@@ -19,7 +19,7 @@ test("repository owns public metadata", () => {
     "git+https://github.com/soksak-ai/soksak-kit-plugin-terminal.git",
   );
   const kit = JSON.parse(readFileSync(join(root, "kit.json"), "utf8"));
-  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.90" });
+  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.91" });
   assert.equal(pkg.version, kit.version);
   assert.equal(pkg.private, false);
   assert.match(pkg.engines.node, /^\d+\.\d+\.\d+$/);
@@ -103,9 +103,12 @@ test("Makefile delegates release to the canonical SDK and publish target", () =>
     assert.match(makefile, new RegExp(`^\t@CI=1 PNPM_DISABLE_SELF_UPDATE_CHECK=1 pnpm \\$\\(if \\$\\(findstring command line,\\$\\(origin REGISTRY\\)\\),\\$\\(registry_flags\\)\\) ${script}$`, "m"), script);
   }
   assert.doesNotMatch(makefile, /^\t@pnpm (build|test|typecheck)$/m);
-  assert.match(makefile, /^release: require-out verify$/m);
+  assert.match(makefile, /^SDK_VERSION := 0\.0\.16$/m);
+  assert.match(makefile, /^release: require-tooling require-out verify$/m);
   assert.match(makefile, /soksak-sdk package --root/);
-  assert.match(makefile, /^publish: require-registry require-out release$/m);
+  assert.match(makefile, /^attest: require-tooling require-out release$/m);
+  assert.match(makefile, /soksak-sdk attest --release-dir/);
+  assert.match(makefile, /^publish: require-registry require-out attest$/m);
   assert.match(makefile, /pnpm publish/);
   refused(run(["release", "REGISTRY=http://127.0.0.1:4873"]), /OUT/);
   refused(run(["release", "OUT=out"]), /OUT/);
