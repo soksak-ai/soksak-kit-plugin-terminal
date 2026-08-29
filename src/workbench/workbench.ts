@@ -228,7 +228,16 @@ export function createWorkbench(root: HTMLElement, paneSet: WorkbenchPaneSet, op
   };
   const layout = (notify: boolean) => {
     if (disposed) return;
-    const area: LayoutRect = { x: 0, y: 0, width: root.clientWidth, height: root.clientHeight };
+    // WebKit can report zero client dimensions for an absolutely positioned native-surface slot
+    // even while its layout box is already present. The bounding rect is the host's displayed
+    // geometry in that case; use it only when the client dimensions are zero, preserving the
+    // integer CSS box used by normal DOM hosts.
+    const measured = root.getBoundingClientRect();
+    const area: LayoutRect = {
+      x: 0, y: 0,
+      width: root.clientWidth || Math.max(0, measured.width),
+      height: root.clientHeight || Math.max(0, measured.height),
+    };
     let gutters: GutterLayout[] = [];
     if (maximizedKey !== null && mounted.has(maximizedKey)) {
       currentPanes = [{ key: maximizedKey, rect: area }];

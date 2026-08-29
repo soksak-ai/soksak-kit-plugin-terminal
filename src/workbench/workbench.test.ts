@@ -98,6 +98,19 @@ describe("workbench", () => {
     }
   });
 
+  it("uses the displayed bounding box when WebKit reports zero client dimensions", () => {
+    const root = document.createElement("div");
+    Object.defineProperty(root, "clientWidth", { value: 0 });
+    Object.defineProperty(root, "clientHeight", { value: 0 });
+    root.getBoundingClientRect = () => ({ width: 800, height: 400 } as DOMRect);
+    document.body.append(root);
+    const { set, panes } = fakePaneSet("tab-rect");
+    createWorkbench(root, set, {
+      viewId: "tab-rect", createResizeObserver: () => ({ observe() {}, disconnect() {} }),
+    });
+    expect(panes.get("tab-rect.1")!.hostPixels!()).toEqual({ width: 800, height: 400 });
+  });
+
   it("splits into a second pane node whose width plus the gutter completes the root", () => {
     const { set, workbench, node, width } = fixture();
     expect(node("pane/1")).not.toBeNull();
