@@ -59,8 +59,15 @@ pane 은 셸이 도는 자리이고, 그것을 스스로 유지합니다.
 레이아웃이 숨긴 pane 과, 호스트가 보여주지 않는 뷰의 모든 pane 은 프레임을 요청하지 않습니다. 세션과
 출력은 유지되고, 다시 보이면 그때 프레임을 요청합니다. 2026-08-26 실측: 숨은 pane 이 4초에 195 프레임에서
 0으로, 창의 렌더링 프로세스가 코어의 92.7% 에서 32.3% 로 내려갔습니다.
-가시성은 호스트 presentation만 결정합니다. DOM 위치나 `IntersectionObserver`로 추측하지 않습니다.
-다시 보일 때 frame renderer는 최신 프레임을 요청하고 byte renderer는 보유한 버퍼를 한 번 다시 그립니다.
+가시성에는 이름이 다른 소유자 둘이 있습니다. Workbench는 자체 split/maximize layout의
+`intrinsicVisible`을 소유하고 Core는 workspace, tab, overlay, focus presentation의 `hostVisible`과
+`dim`을 소유합니다. `effectiveVisible`은 두 값의 논리곱이며 render 작업 여부만 결정합니다. Native
+presenter는 `intrinsicVisible`만 `data-native-visible`에 쓰고 Core host presentation은 view-slot
+조상에 게시되므로 pre-DOM compositor stage를 오래된 중복 host 값이 거부하지 않습니다. 네 사실은
+`data-terminal-intrinsic-visible`, `data-terminal-host-visible`,
+`data-terminal-effective-visible`, `data-terminal-dim`으로 공개합니다. DOM 위치나
+`IntersectionObserver`로 가시성을 추측하지 않습니다. 다시 effective visible이 되면 frame renderer는
+최신 프레임을 요청하고 byte renderer는 보유한 버퍼를 한 번 다시 그립니다.
 
 ## 스트림 순서 규칙
 

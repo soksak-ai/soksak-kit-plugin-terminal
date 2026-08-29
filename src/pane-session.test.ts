@@ -292,7 +292,7 @@ describe("a byte-delivery renderer", () => {
     await Promise.all(waits.splice(0));
     expect(prepareCapture).toHaveBeenCalledOnce();
 
-    pane.setShown(false);
+    pane.setHostPresentation(false, 0);
     prepare(owner);
     expect(prepareCapture).toHaveBeenCalledOnce();
   });
@@ -406,13 +406,13 @@ describe("a pane that is not shown", () => {
     emit(1, new Uint8Array([1, 2, 3]));
     await vi.waitFor(() => expect(recovery.filter((r) => r.op === "frame").length).toBeGreaterThan(0));
 
-    pane.setShown(false);
+    pane.setHostPresentation(false, 0);
     const asked = recovery.filter((r) => r.op === "frame").length;
     emit(1, new Uint8Array([4, 5, 6]));
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(recovery.filter((r) => r.op === "frame").length).toBe(asked);
 
-    pane.setShown(true);
+    pane.setHostPresentation(true, 0);
     await vi.waitFor(() => expect(recovery.filter((r) => r.op === "frame").length).toBeGreaterThan(asked));
   });
 
@@ -435,8 +435,8 @@ describe("a pane that is not shown", () => {
     });
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
 
-    pane.setShown(false);
-    pane.setShown(true);
+    pane.setHostPresentation(false, 0);
+    pane.setHostPresentation(true, 0);
 
     expect(refresh).toHaveBeenCalledOnce();
   });
@@ -875,35 +875,41 @@ describe("surface delivery", () => {
   });
 });
 
-describe("shown state and the presenter", () => {
-  it("hands every shown change to a presenter that listens", async () => {
+describe("visibility state and the presenter", () => {
+  it("hands intrinsic pane visibility to a presenter without rewriting host visibility", async () => {
     const { binding } = fakeBinding(() => ({ ok: true, code: "OK", data: { full: true, cols: 4, rows: 1, cursor: [0, 0], cursorVisible: false, altActive: false, lines: [] } }));
-    const shownChanges: boolean[] = [];
+    const states: Array<{ intrinsicVisible: boolean; hostVisible: boolean }> = [];
     const { pane } = mount(binding, {
       presenterFactory: (root, send, options) => {
         const presenter = defaultTerminalPresenterFactory(root, send, options);
-        return { ...presenter, setShown: (shown: boolean) => { shownChanges.push(shown); } };
+        return { ...presenter, setVisibility: (value) => { states.push(value); } };
       },
     });
-    pane.setShown(false);
-    pane.setShown(true);
-    expect(shownChanges).toEqual([false, true]);
+    states.length = 0;
+    pane.setIntrinsicVisible(false);
+    pane.setIntrinsicVisible(true);
+    expect(states).toEqual([
+      expect.objectContaining({ intrinsicVisible: false, hostVisible: true }),
+      expect.objectContaining({ intrinsicVisible: true, hostVisible: true }),
+    ]);
   });
 
-  it("keeps the last dim when a shown update names none", async () => {
+  it("keeps host presentation and intrinsic pane visibility as separate status axes", async () => {
     const { binding } = fakeBinding(() => ({ ok: true, code: "OK", data: { full: true, cols: 4, rows: 1, cursor: [0, 0], cursorVisible: false, altActive: false, lines: [] } }));
-    const calls: Array<[boolean, number | undefined]> = [];
+    const states: Array<{ intrinsicVisible: boolean; hostVisible: boolean; effectiveVisible: boolean; dim: number }> = [];
     const { pane } = mount(binding, {
       presenterFactory: (root, send, options) => {
         const presenter = defaultTerminalPresenterFactory(root, send, options);
-        return { ...presenter, setShown: (shown: boolean, dim?: number) => { calls.push([shown, dim]); } };
+        return { ...presenter, setVisibility: (value) => { states.push(value); } };
       },
     });
-    pane.setShown(true, 0.5);
-    // The workbench owns only pane visibility and names no dim — the view's
-    // dim must stand, never fall back to clear.
-    pane.setShown(true);
-    pane.setShown(false);
-    expect(calls).toEqual([[true, 0.5], [true, 0.5], [false, 0.5]]);
+    states.length = 0;
+    pane.setHostPresentation(false, 0.5);
+    pane.setIntrinsicVisible(false);
+    expect(states).toEqual([
+      { intrinsicVisible: true, hostVisible: false, effectiveVisible: false, dim: 0.5 },
+      { intrinsicVisible: false, hostVisible: false, effectiveVisible: false, dim: 0.5 },
+    ]);
+    expect(pane.visibility).toEqual(states.at(-1));
   });
 });

@@ -260,7 +260,7 @@ export function activateProviderTerminalPlugin(
         if (drop) drop.dataset.fileGrantState = host.fileGrants ? "available" : "unavailable";
       }
       const presentEverywhere = (visible: boolean, dim: number) => {
-        for (const pane of set.list()) pane.setShown(visible, dim);
+        for (const pane of set.list()) pane.setHostPresentation(visible, dim);
       };
       // A view the host is not showing is a view nothing has to be painted for. Its panes keep their
       // sessions and their output, and they ask for a frame again when the view is shown. The dim
