@@ -30,8 +30,8 @@ require-out: guard
 # Registry is a transport argument, never an ambient setting.
 require-registry: guard
 	@test "$(origin REGISTRY)" = "command line" || { echo 'REGISTRY must be given on the make command line: make publish REGISTRY=http://host:port/' >&2; exit 64; }
-# Portable releases are owned by the exact SDK/spec builder. Kits are private and have no npm
-# publication path; the builder emits release.json and the immutable release asset.
+# Portable releases are owned by the exact SDK/spec builder. This kit is publishable; the builder
+# emits release.json and the immutable release asset used by the local release store.
 release: require-out verify
 	@test "$(origin COMMIT)" = "command line" || { echo 'COMMIT must be given on the make command line' >&2; exit 64; }
 	@node -e 'if (!/^[a-f0-9]{40}$$/.test(process.argv[1])) process.exit(64)' "$(COMMIT)"
