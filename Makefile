@@ -31,4 +31,5 @@ require-out: guard
 release: require-out verify
 	@test "$(origin COMMIT)" = "command line" || { echo 'COMMIT must be given on the make command line' >&2; exit 64; }
 	@node -e 'if (!/^[a-f0-9]{40}$$/.test(process.argv[1])) process.exit(64)' "$(COMMIT)"
-	@soksak-sdk package --root "$(CURDIR)" --spec-root "$(shell dirname "$$(command -v soksak-sdk)")/../.dependencies/soksak-spec" --commit "$(COMMIT)" --out "$(OUT)"
+	@tool="$$(command -v soksak-sdk)"; tooling_root="$$(cd "$$(dirname "$$tool")/.." && pwd -P)"; \
+		soksak-sdk package --root "$(CURDIR)" --spec-root "$$tooling_root/.dependencies/soksak-spec" --commit "$(COMMIT)" --out "$(OUT)"
