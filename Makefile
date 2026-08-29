@@ -1,6 +1,7 @@
 SHELL := /bin/sh
 .PHONY: preflight guard lock prepare build verify require-out require-registry release publish
 registry_flags = --@soksak:registry=$(REGISTRY) --config.minimum-release-age=0
+publish_flags = --registry "$(REGISTRY)" --@soksak:registry="$(REGISTRY)" --no-git-checks
 # OUT and REGISTRY are accepted from the make command line only ($(origin) must be "command line").
 # GNU make's own environment channels (MAKEFLAGS, GNUMAKEFLAGS, MAKEFILES, -e) are outside this
 # Makefile's control and are not refused; setting them is a deliberate act of the caller.
@@ -39,4 +40,4 @@ release: require-out verify
 
 publish: require-registry require-out release
 	@archive="$$(find "$(OUT)" -maxdepth 1 -type f -name '*.tgz' -print -quit)"; test -n "$$archive" || { echo 'release produced no package archive' >&2; exit 65; }; \
-		CI=1 PNPM_DISABLE_SELF_UPDATE_CHECK=1 pnpm publish "$$archive" --registry "$(REGISTRY)" --@soksak:registry "$(REGISTRY)" --no-git-checks
+		CI=1 PNPM_DISABLE_SELF_UPDATE_CHECK=1 pnpm publish "$$archive" $(publish_flags)
