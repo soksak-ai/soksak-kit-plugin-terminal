@@ -114,33 +114,20 @@ make verify REGISTRY=http://host:port/
 
 ## Release
 
-`OUT` and `REGISTRY` are accepted from the make command line only; a value from the environment is
-refused. `OUT` must be an absolute directory and `REGISTRY` an absolute `http://` or `https://` URL.
-OUT and REGISTRY are accepted from the make command line only; a value from the environment is refused
-by name. GNU make's own environment channels (`MAKEFLAGS`, `GNUMAKEFLAGS`, `MAKEFILES`, `-e`) are
-outside the Makefile's control and are not refused; setting them is a deliberate act of the caller.
+`OUT` and `COMMIT` are accepted from the make command line only; a value from the environment is
+refused. `OUT` must be an absolute directory and `COMMIT` the exact lowercase Git SHA. This kit is a
+private portable component: its release is built by the canonical SDK/spec builder and published as
+an immutable GitHub release asset. It is not published to npm.
 
 ```sh
-make release OUT=/absolute/dir REGISTRY=http://host:port/
-make publish OUT=/absolute/dir REGISTRY=http://host:port/
+make release COMMIT=<exact-git-sha> OUT=/absolute/dir REGISTRY=http://host:port/
 ```
 
-`release` runs `verify`, packs, and prints two digests:
+`release` runs `verify` and delegates to the exact SDK:
 
 ```sh
-pnpm pack --pack-destination "$(OUT)"
-shasum -a 256 "<tarball>"
-gunzip -c "<tarball>" | shasum -a 256
-```
-
-gzip bytes differ between zlib builds, so reproducibility of a tarball is judged on the digest of
-the decompressed tar stream. The tarball digest identifies the exact file uploaded. The tarball
-bytes in the registry are the release identity for consumers.
-
-`publish` runs `release`, then uploads that exact tarball:
-
-```sh
-pnpm publish "<tarball>" --registry "$(REGISTRY)" --@soksak:registry="$(REGISTRY)" --no-git-checks
+soksak-sdk package --root <absolute-kit-root> --spec-root <absolute-spec-package> \\
+  --commit <exact-git-sha> --out <absolute-release-directory>
 ```
 
 `prepare` installs the consumed `@soksak` scope from `REGISTRY` with the release-age delay disabled,

@@ -19,8 +19,9 @@ test("repository owns public metadata", () => {
     "git+https://github.com/soksak-ai/soksak-kit-plugin-terminal.git",
   );
   const kit = JSON.parse(readFileSync(join(root, "kit.json"), "utf8"));
-  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.81" });
+  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.82" });
   assert.equal(pkg.version, kit.version);
+  assert.equal(pkg.private, true);
   assert.match(pkg.engines.node, /^\d+\.\d+\.\d+$/);
   assert.equal(nodeVersion, pkg.engines.node);
   assert.match(pkg.packageManager, /^pnpm@\d+\.\d+\.\d+$/);
@@ -47,9 +48,9 @@ test("repository owns public metadata", () => {
   assert.match(workflow, /immutable-releases.*enforced_by_owner/);
 });
 
-test("package publishes by name and version", () => {
+test("package is a private portable component", () => {
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  assert.equal("private" in pkg, false);
+  assert.equal(pkg.private, true);
   assert.equal("publishConfig" in pkg, false);
   assert.deepEqual(pkg.files, ["dist", "kit.json", "src", "!src/**/*.test.ts", "LICENSE", "README*"]);
   assert.deepEqual(pkg.exports, { ".": { types: "./src/index.ts", default: "./dist/index.js" } });
@@ -87,16 +88,12 @@ const copyWithOutdatedLockfile = () => {
   return copy;
 };
 
-test("Makefile packs and publishes with pnpm from command-line OUT and REGISTRY", () => {
+test("Makefile delegates release to the canonical SDK", () => {
   assert.doesNotMatch(makefile, /\bnpm (pack|publish)\b/);
   assert.doesNotMatch(makefile, /PUBLISH_FLAGS/);
   assert.equal(
     makeVariable("registry_flags"),
     "--@soksak:registry=$(REGISTRY) --config.minimum-release-age=0",
-  );
-  assert.equal(
-    makeVariable("publish_flags"),
-    '--registry "$(REGISTRY)" --@soksak:registry="$(REGISTRY)" --no-git-checks',
   );
   assert.match(makefile, /^prepare: guard preflight$/m);
   assert.match(makefile, /pnpm install --frozen-lockfile \$\(if \$\(findstring command line,\$\(origin REGISTRY\)\),\$\(registry_flags\)\)/);
@@ -108,19 +105,11 @@ test("Makefile packs and publishes with pnpm from command-line OUT and REGISTRY"
   }
   assert.doesNotMatch(makefile, /^\t@pnpm (build|test|typecheck)$/m);
   assert.match(makefile, /^release: require-out verify$/m);
-  assert.match(makefile, /pnpm pack --pack-destination "\$\(OUT\)"/);
-  assert.match(makefile, /shasum -a 256 "\$\(tarball\)"/);
-  assert.match(makefile, /gunzip -c "\$\(tarball\)" \| shasum -a 256/);
-  assert.match(makefile, /^publish: require-registry release$/m);
-  assert.match(makefile, /pnpm publish "\$\(tarball\)" \$\(publish_flags\)/);
+  assert.match(makefile, /soksak-sdk package --root/);
   refused(run(["release", "REGISTRY=http://127.0.0.1:4873"]), /OUT/);
   refused(run(["release", "OUT=out"]), /OUT/);
   refused(run(["release", "OUT="]), /OUT/);
-  refused(run(["publish", "OUT=/nonexistent/out"]), /REGISTRY/);
-  refused(run(["publish", "OUT=/nonexistent/out", "REGISTRY=localhost:4873"]), /REGISTRY/);
-  refused(run(["publish", "OUT=/nonexistent/out", "REGISTRY="]), /REGISTRY/);
   refused(run(["release"], { OUT: "/nonexistent/out" }), /OUT.*environment/);
-  refused(run(["publish", "OUT=/nonexistent/out"], { REGISTRY: "http://127.0.0.1:4873" }), /REGISTRY.*environment/);
   refused(run(["prepare"], { REGISTRY: "http://127.0.0.1:4873" }), /REGISTRY.*environment/);
   refused(run(["verify"], { OUT: "/nonexistent/out" }), /OUT.*environment/);
 });
@@ -147,7 +136,6 @@ test("Makefile requires REGISTRY on the command line because the package depends
   refused(run(["build"]), dependency);
   refused(run(["verify"]), dependency);
   refused(run(["release", "OUT=/nonexistent/out"]), dependency);
-  refused(run(["publish", "OUT=/nonexistent/out"]), dependency);
   assert.match(makefile, /node -p '[^']*dependencies[^']*devDependencies[^']*peerDependencies/);
 });
 
@@ -169,17 +157,13 @@ test("prepare exits with the pnpm install status and no workspace message when t
 
 test("README documents the Makefile release commands verbatim", () => {
   const install = `pnpm install --frozen-lockfile ${makeVariable("registry_flags")}`;
-  const publish = `pnpm publish "<tarball>" ${makeVariable("publish_flags")}`;
   for (const name of ["README.md","README.ko.md"]) {
     const readme = readFileSync(join(root, name), "utf8");
     assert.ok(readme.includes("make verify REGISTRY=http://host:port/"), name);
-    assert.ok(readme.includes("make release OUT=/absolute/dir REGISTRY=http://host:port/"), name);
-    assert.ok(readme.includes("make publish OUT=/absolute/dir REGISTRY=http://host:port/"), name);
+    assert.ok(readme.includes("make release COMMIT=<exact-git-sha> OUT=/absolute/dir REGISTRY=http://host:port/"), name);
     assert.ok(readme.includes(install), name);
-    assert.ok(readme.includes('pnpm pack --pack-destination "$(OUT)"'), name);
-    assert.ok(readme.includes(publish), name);
-    assert.ok(readme.includes('gunzip -c "<tarball>" | shasum -a 256'), name);
-    assert.doesNotMatch(readme, /^make (prepare|build|verify|release|publish)\b(?!.*REGISTRY=)/m, name);
+    assert.ok(readme.includes("soksak-sdk package --root"), name);
+    assert.doesNotMatch(readme, /^make (prepare|build|verify|release)\b(?!.*(?:REGISTRY=|COMMIT=))/m, name);
   }
 });
 

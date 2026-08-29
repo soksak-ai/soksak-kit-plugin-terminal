@@ -1,9 +1,6 @@
 SHELL := /bin/sh
-.PHONY: preflight guard lock prepare build verify require-out require-registry release publish
-# pnpm pack names the tarball <name without @, / as ->-<version>.tgz.
-tarball = $(OUT)/$(shell node -p 'const p=require("$(CURDIR)/package.json");p.name.replace("@","").replace("/","-")+"-"+p.version+".tgz"')
+.PHONY: preflight guard lock prepare build verify require-out release
 registry_flags = --@soksak:registry=$(REGISTRY) --config.minimum-release-age=0
-publish_flags = --registry "$(REGISTRY)" --@soksak:registry="$(REGISTRY)" --no-git-checks
 # OUT and REGISTRY are accepted from the make command line only ($(origin) must be "command line").
 # GNU make's own environment channels (MAKEFLAGS, GNUMAKEFLAGS, MAKEFILES, -e) are outside this
 # Makefile's control and are not refused; setting them is a deliberate act of the caller.
@@ -29,13 +26,9 @@ verify: prepare
 	@CI=1 PNPM_DISABLE_SELF_UPDATE_CHECK=1 pnpm $(if $(findstring command line,$(origin REGISTRY)),$(registry_flags)) typecheck
 require-out: guard
 	@test "$(origin OUT)" = "command line" || { echo 'OUT must be given on the make command line: make release OUT=/absolute/dir' >&2; exit 64; }
-require-registry: guard
-	@test "$(origin REGISTRY)" = "command line" || { echo 'REGISTRY must be given on the make command line: make publish OUT=/absolute/dir REGISTRY=http://host:port/' >&2; exit 64; }
-# gzip bytes vary between zlib builds; the tar-stream digest is the reproducibility reference.
+# Portable releases are owned by the exact SDK/spec builder. Kits are private and have no npm
+# publication path; the builder emits release.json and the immutable release asset.
 release: require-out verify
-	@mkdir -p "$(OUT)"
-	@pnpm pack --pack-destination "$(OUT)"
-	@shasum -a 256 "$(tarball)" | tee "$(tarball).sha256"
-	@gunzip -c "$(tarball)" | shasum -a 256 | sed 's|-$$|$(tarball).tar|' | tee "$(tarball).tar.sha256"
-publish: require-registry release
-	@pnpm publish "$(tarball)" $(publish_flags)
+	@test "$(origin COMMIT)" = "command line" || { echo 'COMMIT must be given on the make command line' >&2; exit 64; }
+	@node -e 'if (!/^[a-f0-9]{40}$$/.test(process.argv[1])) process.exit(64)' "$(COMMIT)"
+	@soksak-sdk package --root "$(CURDIR)" --spec-root "$(shell dirname "$$(command -v soksak-sdk)")/../.dependencies/soksak-spec" --commit "$(COMMIT)" --out "$(OUT)"

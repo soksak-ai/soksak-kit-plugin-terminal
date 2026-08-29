@@ -110,33 +110,19 @@ make verify REGISTRY=http://host:port/
 
 ## 릴리즈
 
-`OUT`과 `REGISTRY`는 make 명령줄 인자로만 받습니다. 환경 변수로 들어온 값은 거부합니다.
-`OUT`은 절대 경로 디렉터리, `REGISTRY`는 `http://` 또는 `https://`로 시작하는 절대 URL이어야
-OUT과 REGISTRY는 make 명령줄에서만 받습니다. 환경에서 온 값은 이름을 들어 거부합니다. GNU make 자체의
-환경 채널(`MAKEFLAGS`, `GNUMAKEFLAGS`, `MAKEFILES`, `-e`)은 Makefile이 통제할 수 없으므로 거부하지
-않습니다. 그것을 설정하는 것은 호출자의 의도적 행위입니다.
+`OUT`과 `COMMIT`은 make 명령줄 인자로만 받습니다. `OUT`은 절대 경로 디렉터리,
+`COMMIT`은 정확한 소문자 Git SHA여야 합니다. 이 kit은 private portable component이며 canonical
+SDK/spec builder가 immutable GitHub release asset을 만듭니다. npm에는 publish하지 않습니다.
 
 ```sh
-make release OUT=/absolute/dir REGISTRY=http://host:port/
-make publish OUT=/absolute/dir REGISTRY=http://host:port/
+make release COMMIT=<exact-git-sha> OUT=/absolute/dir REGISTRY=http://host:port/
 ```
 
-`release`는 `verify`를 실행한 뒤 pack하고 두 digest를 출력합니다.
+`release`는 `verify`를 실행한 뒤 exact SDK로 위임합니다.
 
 ```sh
-pnpm pack --pack-destination "$(OUT)"
-shasum -a 256 "<tarball>"
-gunzip -c "<tarball>" | shasum -a 256
-```
-
-gzip 바이트는 zlib 빌드마다 다르므로 tarball의 재현성은 압축을 푼 tar 스트림의 digest로
-판정합니다. tarball digest는 업로드한 정확한 파일을 식별합니다. 레지스트리에 있는 tarball
-바이트가 소비자에게 릴리즈 식별자입니다.
-
-`publish`는 `release`를 실행한 뒤 바로 그 tarball을 업로드합니다.
-
-```sh
-pnpm publish "<tarball>" --registry "$(REGISTRY)" --@soksak:registry="$(REGISTRY)" --no-git-checks
+soksak-sdk package --root <absolute-kit-root> --spec-root <absolute-spec-package> \
+  --commit <exact-git-sha> --out <absolute-release-directory>
 ```
 
 `prepare`는 실제 사용하는 `@soksak` scope를 `REGISTRY`에서 설치하며 release-age 지연을 끄므로
