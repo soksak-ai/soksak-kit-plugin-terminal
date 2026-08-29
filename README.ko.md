@@ -1,6 +1,6 @@
 # soksak-kit-plugin-terminal
 
-`soksak-spec-plugin-terminal` 0.0.15를 구현하는 터미널 플러그인의 공통 브라우저 구현입니다.
+`soksak-spec-plugin-terminal` 0.0.16을 구현하는 터미널 플러그인의 공통 브라우저 구현입니다.
 
 이 kit가 view 등록, PTY 및 복원 수명 주기, 크기 변경, 공개 상태와 터미널 계약의 모든
 표준 명령을 소유합니다. 플러그인은 엔진별 렌더링, 입력, IME, focus와 snapshot 적용을
