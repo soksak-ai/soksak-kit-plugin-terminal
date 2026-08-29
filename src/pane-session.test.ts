@@ -78,6 +78,25 @@ function mount(binding: TerminalSessionBinding, extra: Partial<Parameters<typeof
 }
 
 describe("pane session", () => {
+  it("keeps a fresh pane input-blocked until the first PTY output event", async () => {
+    const { binding, emit } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["prompt"]) } }));
+    const renderer = {
+      delivery: "bytes", rendererId: "test-bytes", rendererProfile: "web",
+      create: (root: HTMLElement) => ({
+        root, size: () => ({ cols: 80, rows: 24 }),
+        writeOutput: async () => {}, applySnapshot: async () => {}, onRendered: () => ({ dispose() {} }),
+        read: () => "", waitForText: async () => "", focus: () => true, dispose() {},
+      }),
+    } as never;
+    const { pane } = mount(binding, { config: { pluginId: "plugin", engineId: "test", renderer } });
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    expect(pane.writable).toBe(false);
+    pane.sendInput("typed-too-early");
+    expect(binding.write).not.toHaveBeenCalled();
+    emit(1, new TextEncoder().encode("prompt "));
+    await vi.waitFor(() => expect(pane.writable).toBe(true));
+  });
+
   it("requests frames for its own subscriber after the exact sequence and applies full then delta frames", async () => {
     let served = 0;
     const { binding, recovery, emit } = fakeBinding(() => {

@@ -430,6 +430,10 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       await presenter.writeOutput(bytes);
       if (generation === sourceGeneration) {
         renderedSequence = Math.max(renderedSequence ?? 0, throughSeq);
+        // A byte renderer (for example xterm) is input-ready only after its first PTY bytes
+        // reached the engine. This is an event boundary; accepting a key before it races the
+        // shell prompt during a fresh restore.
+        if (!writable) writable = true;
         status.refresh();
       }
     } finally {
@@ -540,7 +544,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   // starts behind it.
   requestResize();
   const keepTail = (chunk: Uint8Array) => { tail.push(chunk); };
-  const attach = (opened: number) => {
+  const attach = (opened: number, readyOnAttach = !bytesDelivery) => {
     // A pane is live when it has a session. A number that is not one is not a session, and writing
     // to it hands every keystroke to something nothing serves.
     if (!Number.isSafeInteger(opened) || opened < 1) {
@@ -569,7 +573,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       });
       restartSession();
     });
-    writable = true;
+    writable = readyOnAttach;
     requestResize();
     if (!bytesDelivery && frameForced) scheduleRenderLatest();
   };
@@ -651,7 +655,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     const opened = await binding.open(key, 80, 24, { leaseToken }, undefined, openOptions());
     if (await detachIfStopped(opened)) return;
     requestedSize = { cols: 80, rows: 24 };
-    attach(opened);
+    attach(opened, true);
     root.dataset.terminalOperation = "ready";
     presentation.markReady();
     status.refresh();
