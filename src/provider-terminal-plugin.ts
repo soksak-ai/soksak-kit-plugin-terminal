@@ -25,6 +25,8 @@ import type { PaneDirection } from "./workbench/split-layout";
 import { createWorkbench, type Workbench } from "./workbench/workbench";
 
 export interface ViewContext extends PaneSetContext {
+  /** Selected workspace root; new panes start here unless restore supplies a cwd. */
+  root: string | null;
   viewId?: string | null;
   paneId?: string | null;
   restore?: { cwd: string | null; state: unknown } | null;
