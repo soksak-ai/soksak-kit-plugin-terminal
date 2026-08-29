@@ -4,6 +4,7 @@ import { activateProviderTerminalPlugin, type ProviderTerminalPluginHost } from 
 import {
   TERMINAL_PLUGIN_COMMANDS,
   TERMINAL_PLUGIN_COMMAND_SCHEMAS,
+  TERMINAL_SURFACE_DELIVER_VERBS,
 } from "@soksak/soksak-contract-plugin-terminal";
 globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as typeof ResizeObserver;
 
@@ -60,6 +61,10 @@ function activate(channel: { send: unknown; stream: unknown }) {
 }
 
 describe("provider-backed terminal plugin", () => {
+  it("consumes the terminal contract that declares native wheel delivery", () => {
+    expect(TERMINAL_SURFACE_DELIVER_VERBS).toContain("wheel");
+  });
+
   it("rejects a corrupt archive but starts a fresh writable terminal with visible failure status", async () => {
     let view: View | undefined;
     const commands = new Map<string, Record<string, unknown>>();
