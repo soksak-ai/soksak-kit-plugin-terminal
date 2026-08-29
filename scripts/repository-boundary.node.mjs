@@ -19,7 +19,7 @@ test("repository owns public metadata", () => {
     "git+https://github.com/soksak-ai/soksak-kit-plugin-terminal.git",
   );
   const kit = JSON.parse(readFileSync(join(root, "kit.json"), "utf8"));
-  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.82" });
+  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.83" });
   assert.equal(pkg.version, kit.version);
   assert.equal(pkg.private, true);
   assert.match(pkg.engines.node, /^\d+\.\d+\.\d+$/);
@@ -38,6 +38,7 @@ test("repository owns public metadata", () => {
   assert.ok(releaseFiles.includes("src/terminal-resize-worker.ts"));
   assert.ok(releaseFiles.includes("src/terminal-resize-status.ts"));
   assert.ok(releaseFiles.includes("src/terminal-layout-observer.ts"));
+  assert.ok(releaseFiles.includes("src/bounded-output-tail.ts"));
   const workflow = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
   assert.match(workflow, /node-version-file: component\/[.]node-version/);
   assert.match(workflow, /package_json_file: component\/package\.json/);
