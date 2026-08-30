@@ -13,9 +13,11 @@ renderer adapter로 제공할 수 있지만 수명 주기나 표준 명령을 �
 병합합니다. wait는 현재 확정 상태를 먼저 검사하고 충족되지 않을 때만 사건을
 구독합니다. 표준 `wait` command는 lifecycle, text, size, focus, cursor와 함께 renderer에
 표시된 `themeMode`·`effectiveBackground`, 정확/최소 history size, 정확한 viewport offset,
-`follow|pinned` mode를 요구할 수 있습니다. Frame은 history와 viewport 상태를 먼저 commit한
-뒤 render status event를 게시하므로 output marker가 상태 wait를 먼저 끝낼 수 없습니다.
-Presenter를 주기적으로 조회하는 wait 경로는 없습니다.
+`follow|pinned` mode를 요구할 수 있습니다. 엄격한
+`acceptedInputSequenceGreaterThan`·`ptyWriteSequenceGreaterThan` threshold는 input admission과
+뒤이은 PTY write를 서로 다른 publication edge로 노출합니다. Frame은 history와 viewport 상태를
+먼저 commit한 뒤 render status event를 게시하므로 output marker가 상태 wait를 먼저 끝낼 수
+없습니다. Presenter를 주기적으로 조회하는 wait 경로는 없습니다.
 Presenter text read는 sync 또는 async일 수 있습니다. 표준 `read` command는 결과를 await하고
 `{text:string}`만 게시하므로 IPC Promise가 command status로 노출되지 않습니다.
 Selection read도 같은 경계를 따릅니다. `selection`과 `copy`는 native presenter를 await하고 resolve된
