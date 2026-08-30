@@ -28,6 +28,8 @@ export interface ViewContext extends PaneSetContext {
   /** Selected workspace root; new panes start here unless restore supplies a cwd. */
   root: string | null;
   viewId?: string | null;
+  /** Monotonic owner identity of this mounted Core view container. */
+  containerGeneration: number;
   paneId?: string | null;
   restore?: { cwd: string | null; state: unknown } | null;
   // What the host shows of this view: whether it is painted, and how much the
@@ -249,6 +251,7 @@ export function activateProviderTerminalPlugin(
         config: {
           pluginId: config.pluginId, engineId: config.engineId, renderer: config.renderer,
           presenter: config.presenter, label: config.label,
+          containerGeneration: context.containerGeneration,
         },
         engineFor, stopBarriers, restore: saved ? { next: saved.next } : null,
       });

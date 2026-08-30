@@ -72,6 +72,7 @@ export interface TerminalRendererAdapter {
 
 export interface TerminalPresenterOptions {
   nodeSuffix: string | null;
+  containerGeneration: number;
   hostPixels(): { width: number; height: number };
   requestViewport(offset: number): void;
 }
@@ -83,6 +84,7 @@ export interface PaneSessionConfig {
   pluginId: string;
   // The plugin's own engine; the pane's engine may differ and names the renderer id.
   engineId: string;
+  containerGeneration?: number;
   renderer?: TerminalRendererAdapter;
   presenter?: TerminalPresenterFactory;
 }
@@ -253,7 +255,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   const send = (text: string) => { void writeToPty(text, true).catch(() => {}); };
   let viewportRequest: ((offset: number) => void) | null = null;
   const presenterOptions = {
-    nodeSuffix, hostPixels,
+    nodeSuffix, containerGeneration: config.containerGeneration ?? 1, hostPixels,
     requestViewport: (next: number) => viewportRequest?.(next),
   };
   const presenter: TerminalPresenter = config.renderer

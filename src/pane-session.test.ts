@@ -252,7 +252,7 @@ describe("a byte-delivery renderer", () => {
     const { binding } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
     const { pane } = mount(binding, {
       config: {
-        pluginId: "plugin", engineId: "vt100",
+        pluginId: "plugin", engineId: "vt100", containerGeneration: 17,
         renderer: {
           delivery: "bytes" as const, rendererId: "probe",
           create: (root: HTMLElement, key: string, _send: (text: string) => void, options: unknown) => {
@@ -271,7 +271,7 @@ describe("a byte-delivery renderer", () => {
     });
     expect(seen).toHaveLength(1);
     expect(seen[0].pane).toBe("tab-a.2");
-    expect(seen[0].options).toMatchObject({ nodeSuffix: "2" });
+    expect(seen[0].options).toMatchObject({ nodeSuffix: "2", containerGeneration: 17 });
     expect(typeof (seen[0].options as { hostPixels: unknown }).hostPixels).toBe("function");
     void pane;
   });
