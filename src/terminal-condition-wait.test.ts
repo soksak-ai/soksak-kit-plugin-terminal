@@ -86,4 +86,62 @@ describe("terminal condition wait", () => {
       presentation: { focusedInput: true, cursorVisible: true, cursorActive: true },
     });
   });
+
+  it("waits for presented theme mode and effective background publication", async () => {
+    const root = document.createElement("div");
+    let presentation = closedTerminalPresentation("surface", theme);
+    const status = createTerminalStatusController({
+      root, pluginId: "plugin", engineId: "engine", rendererId: "renderer",
+      rendererProfile: "native-surface", publish: vi.fn(), presentation: () => presentation,
+    });
+    status.set("live", { recoveryOutcome: "fresh", fidelity: "complete" });
+    let settled = false;
+    const waiting = waitForTerminalConditions({
+      status, phase: "live", timeoutMs: 1000, waitForText: vi.fn(),
+      theme: { themeMode: "light", effectiveBackground: "#f0f0f0" },
+    }).then((answer) => { settled = true; return answer; });
+
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    const lightBase = { ...baseTheme, background: "#f0f0f0" };
+    presentation = {
+      ...presentation,
+      themeMode: "light",
+      baseTheme: lightBase,
+      effectiveTheme: resolveTerminalTheme(lightBase, terminalOverrides),
+    };
+    status.refresh();
+
+    await expect(waiting).resolves.toMatchObject({
+      presentation: { themeMode: "light", effectiveTheme: { background: "#f0f0f0" } },
+    });
+  });
+
+  it("waits for history and viewport state only at a status publication edge", async () => {
+    const root = document.createElement("div");
+    const status = createTerminalStatusController({
+      root, pluginId: "plugin", engineId: "engine", rendererId: "renderer",
+      rendererProfile: "web", publish: vi.fn(),
+      presentation: () => closedTerminalPresentation("frame", theme),
+    });
+    status.set("live", { recoveryOutcome: "fresh", fidelity: "complete" });
+    let viewport = { historySize: 0, offset: 0, followMode: "follow" as const };
+    let settled = false;
+    const waiting = waitForTerminalConditions({
+      status, phase: "live", timeoutMs: 1000, waitForText: vi.fn(),
+      viewport: { historySize: 120, minHistorySize: 100, offset: 120, followMode: "pinned" },
+      readViewport: () => viewport,
+    }).then((answer) => { settled = true; return answer; });
+
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    viewport = { historySize: 120, offset: 120, followMode: "pinned" };
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    status.refresh();
+
+    await expect(waiting).resolves.toMatchObject({
+      historySize: 120, offset: 120, followMode: "pinned",
+    });
+  });
 });

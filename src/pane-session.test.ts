@@ -175,6 +175,30 @@ describe("pane session", () => {
     expect(recovery.filter((request) => request.op === "frame").at(-1)).toMatchObject({ offset: 0, afterSequence: 2 });
   });
 
+  it("publishes a frame status event only after its history and viewport state is current", async () => {
+    const { binding, emit } = fakeBinding(() => ({
+      ok: true,
+      data: { outputSequence: 1, offset: 120, historySize: 120, ...frameOf(["marker"]) },
+    }));
+    const { pane, root } = mount(binding);
+    await pane.status.wait(["live"], 1000);
+    const published = new Promise<{ historySize: number; offset: number; followMode: string }>((resolve) => {
+      root.addEventListener("soksak:terminal-status", () => resolve({
+        historySize: pane.historySize,
+        offset: pane.offset,
+        followMode: pane.followMode,
+      }), { once: true });
+    });
+
+    emit(1, new Uint8Array([1]));
+
+    await expect(published).resolves.toEqual({
+      historySize: 120,
+      offset: 120,
+      followMode: "pinned",
+    });
+  });
+
   it("routes a presenter's viewport request through the frame authority", async () => {
     let requestViewport: ((offset: number) => void) | undefined;
     const { binding, recovery, emit } = fakeBinding(() => {
