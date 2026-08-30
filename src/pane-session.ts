@@ -854,10 +854,9 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       // A renderer that keeps its own scrollback is the authority on where it is.
       if (presenter.scrollState) {
         const state = presenter.scrollState();
-        const bounded = (value: number) => Math.max(0, Math.min(state.historySize, Math.floor(value)));
         if (request.edge === "top") await presenter.scrollTo?.(state.historySize);
         else if (request.edge === "bottom") await presenter.scrollTo?.(0);
-        else if (typeof request.offset === "number") await presenter.scrollTo?.(bounded(request.offset));
+        else if (typeof request.offset === "number") await presenter.scrollTo?.(Math.max(0, Math.floor(request.offset)));
         else if (typeof request.lines === "number") await presenter.scrollLines?.(request.lines);
         const moved = presenter.scrollState();
         return { pane: key, offset: moved.offset, historySize: moved.historySize, followMode: moved.offset === 0 ? "follow" : "pinned" };

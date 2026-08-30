@@ -354,6 +354,37 @@ describe("scrolling a byte-delivery pane", () => {
     await expect(pane.scroll({ edge: "bottom" })).resolves.toMatchObject({ offset: 0, followMode: "follow" });
     await expect(pane.scroll({ offset: 500 })).resolves.toMatchObject({ offset: 120 });
   });
+
+  it("sends an absolute offset to the renderer even before its history snapshot arrives", async () => {
+    let state = { offset: 0, historySize: 0 };
+    const requested: number[] = [];
+    const { binding } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    const { pane } = mount(binding, {
+      config: {
+        pluginId: "plugin", engineId: "vt100",
+        renderer: {
+          delivery: "bytes" as const, rendererId: "probe",
+          create: (root: HTMLElement) => ({
+            root, screen: root, input: root.ownerDocument.createElement("textarea"),
+            read: () => "", size: () => ({ cols: 0, rows: 0 }), measure: () => ({ cols: 0, rows: 0 }),
+            focus: () => true, dispose: () => {},
+            writeOutput: () => {}, applySnapshot: () => {}, onRendered: () => ({ dispose: () => {} }),
+            scrollState: () => state,
+            scrollLines: async () => {},
+            scrollTo: async (next: number) => {
+              requested.push(next);
+              state = { offset: Math.min(next, 52), historySize: 52 };
+            },
+          } as never),
+        },
+      },
+    });
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    await expect(pane.scroll({ offset: 10 })).resolves.toEqual({
+      pane: "tab-a.2", offset: 10, historySize: 52, followMode: "pinned",
+    });
+    expect(requested).toEqual([10]);
+  });
 });
 
 // Detaching keeps a session for the pane to reattach to; closing ends it. A pane the caller closed
