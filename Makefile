@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 .PHONY: preflight guard lock prepare build verify require-tooling require-out require-registry release attest publish
-SDK_VERSION := 0.0.18
+SDK_VERSION := 0.0.19
 registry_flags = --@soksak:registry=$(REGISTRY) --config.minimum-release-age=0
 publish_flags = --registry "$(REGISTRY)" --@soksak:registry="$(REGISTRY)" --no-git-checks
 # OUT and REGISTRY are accepted from the make command line only ($(origin) must be "command line").

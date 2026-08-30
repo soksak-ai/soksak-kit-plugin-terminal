@@ -103,7 +103,7 @@ test("Makefile delegates release to the canonical SDK and publish target", () =>
     assert.match(makefile, new RegExp(`^\t@CI=1 PNPM_DISABLE_SELF_UPDATE_CHECK=1 pnpm \\$\\(if \\$\\(findstring command line,\\$\\(origin REGISTRY\\)\\),\\$\\(registry_flags\\)\\) ${script}$`, "m"), script);
   }
   assert.doesNotMatch(makefile, /^\t@pnpm (build|test|typecheck)$/m);
-  assert.match(makefile, /^SDK_VERSION := 0\.0\.18$/m);
+  assert.match(makefile, /^SDK_VERSION := 0\.0\.19$/m);
   assert.match(makefile, /^release: require-tooling require-out verify$/m);
   assert.match(makefile, /soksak-sdk package --root/);
   assert.match(makefile, /^attest: require-tooling require-out release$/m);
