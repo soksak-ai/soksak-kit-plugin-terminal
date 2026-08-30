@@ -125,7 +125,9 @@ describe("terminal condition wait", () => {
       presentation: () => closedTerminalPresentation("frame", theme),
     });
     status.set("live", { recoveryOutcome: "fresh", fidelity: "complete" });
-    let viewport = { historySize: 0, offset: 0, followMode: "follow" as const };
+    let viewport: { historySize: number; offset: number; followMode: "follow" | "pinned" } = {
+      historySize: 0, offset: 0, followMode: "follow",
+    };
     let settled = false;
     const waiting = waitForTerminalConditions({
       status, phase: "live", timeoutMs: 1000, waitForText: vi.fn(),

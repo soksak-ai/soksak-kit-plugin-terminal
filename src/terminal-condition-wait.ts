@@ -12,6 +12,14 @@ export interface TerminalConditionWaitOptions {
   size?: { cols?: number; colsLessThan?: number; colsGreaterThan?: number; rows?: number };
   waitForSize?(condition: { cols?: number; colsLessThan?: number; colsGreaterThan?: number; rows?: number }, timeoutMs: number): Promise<{ cols: number; rows: number }>;
   presentation?: { focusedInput?: boolean; cursorVisible?: boolean; cursorActive?: boolean };
+  theme?: { themeMode?: "light" | "dark"; effectiveBackground?: string };
+  viewport?: {
+    historySize?: number;
+    minHistorySize?: number;
+    offset?: number;
+    followMode?: "follow" | "pinned";
+  };
+  readViewport?(): { historySize: number; offset: number; followMode: "follow" | "pinned" };
 }
 
 export async function waitForTerminalConditions(
@@ -27,15 +35,40 @@ export async function waitForTerminalConditions(
   const size = hasSizeCondition && options.size && options.waitForSize
     ? await options.waitForSize(options.size, remaining())
     : undefined;
+  if (options.viewport && !options.readViewport) {
+    throw new Error("terminal viewport wait requires a viewport state reader");
+  }
+  let matchedViewport: ReturnType<NonNullable<TerminalConditionWaitOptions["readViewport"]>> | undefined;
   const status = await options.status.wait([options.phase, "blocked"], remaining(), (next) => {
     if (next.phase === "blocked") return true;
-    if (!options.presentation) return true;
-    return (options.presentation.focusedInput === undefined
+    const presentationMatches = !options.presentation || ((options.presentation.focusedInput === undefined
       || next.presentation.focusedInput === options.presentation.focusedInput)
       && (options.presentation.cursorVisible === undefined
         || next.presentation.cursorVisible === options.presentation.cursorVisible)
       && (options.presentation.cursorActive === undefined
-        || next.presentation.cursorActive === options.presentation.cursorActive);
+        || next.presentation.cursorActive === options.presentation.cursorActive));
+    const themeMatches = !options.theme
+      || ((options.theme.themeMode === undefined
+        || next.presentation.themeMode === options.theme.themeMode)
+        && (options.theme.effectiveBackground === undefined
+          || next.presentation.effectiveTheme.background === options.theme.effectiveBackground));
+    const viewport = options.readViewport?.();
+    const viewportMatches = !options.viewport || (viewport !== undefined
+      && (options.viewport.historySize === undefined
+        || viewport.historySize === options.viewport.historySize)
+      && (options.viewport.minHistorySize === undefined
+        || viewport.historySize >= options.viewport.minHistorySize)
+      && (options.viewport.offset === undefined || viewport.offset === options.viewport.offset)
+      && (options.viewport.followMode === undefined
+        || viewport.followMode === options.viewport.followMode));
+    if (presentationMatches && themeMatches && viewportMatches) matchedViewport = viewport;
+    return presentationMatches && themeMatches && viewportMatches;
   });
-  return { ...status, ...(text === undefined ? {} : { text }), ...(size ?? {}) };
+  const viewport = matchedViewport ?? options.readViewport?.();
+  return {
+    ...status,
+    ...(text === undefined ? {} : { text }),
+    ...(size ?? {}),
+    ...(viewport ?? {}),
+  };
 }

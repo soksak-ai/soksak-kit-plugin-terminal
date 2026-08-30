@@ -394,10 +394,16 @@ export function activateProviderTerminalPlugin(
     focusedInput: { type: "boolean", description: { en: "Focused input state", ko: "입력 포커스 상태" } },
     cursorVisible: { type: "boolean", description: { en: "Visible cursor state", ko: "커서 표시 상태" } },
     cursorActive: { type: "boolean", description: { en: "Active cursor state", ko: "활성 커서 상태" } },
+    themeMode: { type: "string", enum: ["light", "dark"], description: { en: "Presented terminal theme mode", ko: "표시된 터미널 테마 모드" } },
+    effectiveBackground: { type: "string", description: { en: "Presented effective background color", ko: "표시된 최종 배경색" } },
+    historySize: { type: "number", description: { en: "Exact history size", ko: "정확한 기록 크기" } },
+    minHistorySize: { type: "number", description: { en: "Minimum history size", ko: "최소 기록 크기" } },
+    offset: { type: "number", description: { en: "Exact viewport offset", ko: "정확한 viewport 위치" } },
+    followMode: { type: "string", enum: ["follow", "pinned"], description: { en: "Viewport follow mode", ko: "viewport 따라가기 모드" } },
     idleMs: { type: "number", description: { en: "No output for this long", ko: "이 시간 동안 출력 없음" } },
   }), async (params, context) => {
     const found = target(params, context);
-    if (!found) return closedStatus();
+    if (!found) return { ...closedStatus(), historySize: 0, offset: 0, followMode: "follow" };
     const { pane } = found;
     const phase = String(params.phase) as TerminalPluginPublicStatus["phase"];
     const timeoutMs = typeof params.timeoutMs === "number" ? params.timeoutMs : 10000;
@@ -412,6 +418,24 @@ export function activateProviderTerminalPlugin(
         ...(typeof params.cursorVisible === "boolean" ? { cursorVisible: params.cursorVisible } : {}),
         ...(typeof params.cursorActive === "boolean" ? { cursorActive: params.cursorActive } : {}),
       },
+      theme: {
+        ...(params.themeMode === "light" || params.themeMode === "dark"
+          ? { themeMode: params.themeMode } : {}),
+        ...(typeof params.effectiveBackground === "string"
+          ? { effectiveBackground: params.effectiveBackground } : {}),
+      },
+      viewport: {
+        ...(typeof params.historySize === "number" ? { historySize: params.historySize } : {}),
+        ...(typeof params.minHistorySize === "number" ? { minHistorySize: params.minHistorySize } : {}),
+        ...(typeof params.offset === "number" ? { offset: params.offset } : {}),
+        ...(params.followMode === "follow" || params.followMode === "pinned"
+          ? { followMode: params.followMode } : {}),
+      },
+      readViewport: () => ({
+        historySize: pane.historySize,
+        offset: pane.offset,
+        followMode: pane.followMode,
+      }),
       size: {
         ...(typeof params.cols === "number" ? { cols: params.cols } : {}),
         ...(typeof params.colsLessThan === "number" ? { colsLessThan: params.colsLessThan } : {}),

@@ -385,17 +385,24 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     }
   });
 
-  const applyFrame = (value: unknown): boolean => {
-    if (!value || typeof value !== "object") return false;
+  const presentFrame = (value: unknown): number | null => {
+    if (!value || typeof value !== "object") return null;
     const startedAt = performance.now();
     presenter.renderFrame?.(value as ProviderFrame);
+    return startedAt;
+  };
+  const applyFrame = (value: unknown): boolean => {
+    const startedAt = presentFrame(value);
+    if (startedAt === null) return false;
     markRendered(startedAt);
     return true;
   };
   // The frame reply is the frame: the sequence, the geometry and the lines arrive in one object.
   const applyFrameSnapshot = (value: Record<string, unknown>): boolean => {
     const outputSequence = Number(value.outputSequence);
-    if (!Number.isSafeInteger(outputSequence) || outputSequence < 0 || !applyFrame(value)) return false;
+    if (!Number.isSafeInteger(outputSequence) || outputSequence < 0) return false;
+    const startedAt = presentFrame(value);
+    if (startedAt === null) return false;
     renderedSequence = outputSequence;
     // A frame that was applied is the pane working again: the retry delay starts over from there.
     restartsWithoutProgress = 0;
@@ -405,6 +412,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     // The reply's offset is the one applied; the request was only a wish.
     const reportedOffset = Number(value.offset ?? frame.offset);
     if (Number.isSafeInteger(reportedOffset) && reportedOffset >= 0) offset = reportedOffset;
+    markRendered(startedAt);
     return true;
   };
   const requireReply = (reply: Record<string, unknown>, operation: string) => {
@@ -875,6 +883,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
         else if (typeof request.offset === "number") await presenter.scrollTo?.(Math.max(0, Math.floor(request.offset)));
         else if (typeof request.lines === "number") await presenter.scrollLines?.(request.lines);
         const moved = presenter.scrollState();
+        status.refresh();
         return { pane: key, offset: moved.offset, historySize: moved.historySize, followMode: moved.offset === 0 ? "follow" : "pinned" };
       }
       const clamp = (value: number) => Math.max(0, Math.min(historySize, Math.floor(value)));
@@ -887,6 +896,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
         if (renderingTask) await renderingTask.catch(() => {});
         await renderLatest().catch(reportFrameFailure);
       }
+      status.refresh();
       return { pane: key, offset, historySize, followMode: offset === 0 ? "follow" : "pinned" };
     },
     waitIdle(idleMs, timeoutMs) {
