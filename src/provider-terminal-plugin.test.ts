@@ -304,8 +304,13 @@ describe("provider-backed terminal plugin", () => {
     const redeem = vi.fn(async (id: string) => id === "grant-file"
       ? { kind: "file" as const, path: "/tmp/a b" }
       : id === "grant-image"
-        ? { kind: "image" as const, path: "/tmp/image.png" }
+        ? {
+            kind: "image" as const,
+            path: "/tmp/image.png",
+            inline: { protocol: "terminal-image-v1", data: "aW1hZ2U=" },
+          }
         : null);
+    const presentInlineImage = vi.fn(async () => true);
     const events: string[] = [];
     let onDropped: ((payload: { paneId: string | null; grants: Array<{ id: string; kind: "file" | "image" }> }) => void) | undefined;
     const host: ProviderTerminalPluginHost = {
@@ -332,6 +337,7 @@ describe("provider-backed terminal plugin", () => {
       presenter: (root) => ({
         root, size: () => ({ cols: 80, rows: 24 }), read: () => "screen",
         selection: async () => "selected", modes: () => ({ bracketedPaste: true }),
+        presentInlineImage,
         waitForText: async () => "screen", focus: () => true, dispose() {},
       }),
     });
@@ -359,20 +365,23 @@ describe("provider-backed terminal plugin", () => {
     const dropped = requests.filter((request) => request.command === "pty.write").at(-1)?.payload.dataB64;
     expect(decode(dropped)).toBe("'/tmp/a b' ");
     await expect(call("drop", { grants: ["grant-image"], mode: "inline" }))
-      .resolves.toEqual({ pane: "pane.1", accepted: 0, mode: "inline" });
+      .resolves.toEqual({ pane: "pane.1", accepted: 1, mode: "inline" });
+    expect(presentInlineImage).toHaveBeenCalledWith({
+      protocol: "terminal-image-v1", data: "aW1hZ2U=",
+    });
     expect(events).toEqual([
       "soksak:terminal-clipboard-copied", "soksak:terminal-clipboard-pasted",
-      "soksak:terminal-drop-accepted", "soksak:terminal-drop-refused",
+      "soksak:terminal-drop-accepted", "soksak:terminal-drop-accepted",
     ]);
     const drop = root.querySelector<HTMLElement>('[data-node="terminal-drop-target/1"]')!;
     expect(drop.dataset.fileGrantState).toBe("available");
-    expect(JSON.parse(drop.dataset.lastDrop ?? "null")).toEqual({ accepted: 0, refused: 1, mode: "inline" });
+    expect(JSON.parse(drop.dataset.lastDrop ?? "null")).toEqual({ accepted: 1, refused: 0, mode: "inline" });
     await expect(call("status")).resolves.toMatchObject({
       presentation: {
         bracketedPaste: true,
         selection: { active: true, text: "selected" },
         clipboardPermission: { read: true, write: true },
-        drop: { fileGrantState: "available", last: { accepted: 0, refused: 1, mode: "inline" } },
+        drop: { fileGrantState: "available", last: { accepted: 1, refused: 0, mode: "inline" } },
       },
     });
     const writesBeforeEvent = requests.filter((request) => request.command === "pty.write").length;
