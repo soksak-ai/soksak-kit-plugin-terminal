@@ -384,6 +384,13 @@ describe("provider-backed terminal plugin", () => {
         drop: { fileGrantState: "available", last: { accepted: 1, refused: 0, mode: "inline" } },
       },
     });
+    const writesBeforeInlineRefusal = requests.filter((request) => request.command === "pty.write").length;
+    await expect(call("drop", { grants: ["grant-file"], mode: "inline" }))
+      .resolves.toEqual({ pane: "pane.1", accepted: 0, mode: "inline" });
+    expect(presentInlineImage).toHaveBeenCalledTimes(1);
+    expect(requests.filter((request) => request.command === "pty.write")).toHaveLength(writesBeforeInlineRefusal);
+    expect(events.at(-1)).toBe("soksak:terminal-drop-refused");
+    expect(JSON.parse(drop.dataset.lastDrop ?? "null")).toEqual({ accepted: 0, refused: 1, mode: "inline" });
     const writesBeforeEvent = requests.filter((request) => request.command === "pty.write").length;
     onDropped?.({ paneId: "pane", grants: [{ id: "grant-file", kind: "file" }] });
     await vi.waitFor(() => {
