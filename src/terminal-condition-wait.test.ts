@@ -117,6 +117,37 @@ describe("terminal condition wait", () => {
     });
   });
 
+  it("waits for monotonic input admission and PTY write sequence publication", async () => {
+    const root = document.createElement("div");
+    let presentation = {
+      ...closedTerminalPresentation("surface", theme),
+      acceptedInputSequence: 2,
+      ptyWriteSequence: 1,
+    };
+    const status = createTerminalStatusController({
+      root, pluginId: "plugin", engineId: "engine", rendererId: "renderer",
+      rendererProfile: "native-surface", publish: vi.fn(), presentation: () => presentation,
+    });
+    status.set("live", { recoveryOutcome: "fresh", fidelity: "complete" });
+    let settled = false;
+    const waiting = waitForTerminalConditions({
+      status, phase: "live", timeoutMs: 1000, waitForText: vi.fn(),
+      presentation: {
+        acceptedInputSequenceGreaterThan: 1,
+        ptyWriteSequenceGreaterThan: 1,
+      },
+    }).then((answer) => { settled = true; return answer; });
+
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    presentation = { ...presentation, ptyWriteSequence: 2 };
+    status.refresh();
+
+    await expect(waiting).resolves.toMatchObject({
+      presentation: { acceptedInputSequence: 2, ptyWriteSequence: 2 },
+    });
+  });
+
   it("waits for history and viewport state only at a status publication edge", async () => {
     const root = document.createElement("div");
     const status = createTerminalStatusController({
