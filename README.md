@@ -10,6 +10,11 @@ standard commands. Optional plugin commands are registered as explicit extension
 Status reports host pixels, requested size, PTY observation, recovery observation and rendered size.
 Layout updates consume both `ResizeObserver` and the host's post-commit `layout.reflow` event. Both
 signals enter the same serial resize worker; no interval or retry path exists.
+The standard `wait` command listens to that same status publication. In addition to lifecycle,
+text, size, focus and cursor predicates, it can require the presented `themeMode` and
+`effectiveBackground`, plus exact/minimum history size, exact viewport offset and `follow|pinned`
+mode. A frame commits history and viewport state before publishing its render event, so an output
+marker cannot release a state wait early. No wait path samples a presenter on an interval.
 Presenter text reads may be synchronous or asynchronous. The standard `read` command awaits the
 result and publishes only `{text:string}`; an IPC Promise never leaks into command status.
 Selection reads follow the same boundary: `selection` and `copy` await a native presenter and
