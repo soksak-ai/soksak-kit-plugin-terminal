@@ -39,6 +39,8 @@ export interface TerminalPresenter {
   compose?(updates: string[], data: string): number;
   modes?(): ProviderFrameModes;
   presentInlineImage?(image: { protocol: string; data: string }): Promise<boolean> | boolean;
+  /** Resolves only when this mounted renderer generation owns a usable backing session. */
+  ready?(): Promise<void>;
   waitForText(contains: string, timeoutMs: number): Promise<string>;
   focus(): boolean;
   prepareFocusTransfer?(): void;
@@ -290,8 +292,8 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   if (bytesDelivery && (!presenter.writeOutput || !presenter.applySnapshot || !presenter.onRendered)) {
     throw new Error("byte renderer requires parser and rendered-frame completion contracts");
   }
-  if (surfaceDelivery && (!presenter.sendText || !presenter.themeStatus || !presenter.setTheme)) {
-    throw new Error("surface renderer requires sendText, themeStatus and setTheme contracts");
+  if (surfaceDelivery && (!presenter.sendText || !presenter.themeStatus || !presenter.setTheme || !presenter.ready)) {
+    throw new Error("surface renderer requires ready, sendText, themeStatus and setTheme contracts");
   }
   const terminalSize = () => {
     presenter.fit?.();
@@ -757,7 +759,12 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   };
   const start = async () => {
     if (surfaceDelivery) {
-      // The surface owner runs the session; the pane is live from the moment it is mounted.
+      // The surface owner runs the session. Mounting a declaration is not readiness: an older
+      // native generation may still answer under the same pane key until the new owner opens.
+      status.set("attaching-live-stream");
+      root.dataset.terminalOperation = "waiting-surface-owner";
+      await presenter.ready!();
+      if (stopped) return;
       writable = true;
       root.dataset.terminalOperation = "ready";
       presentation.markReady();

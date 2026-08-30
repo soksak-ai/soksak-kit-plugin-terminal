@@ -758,7 +758,7 @@ describe("a pane whose engine missed output", () => {
 // keeps the split, the restore state and the commands, and it opens no session, polls no frame and
 // writes no byte itself — every one of those is the surface owner's.
 describe("surface delivery", () => {
-  function surfacePresenter(root: HTMLElement) {
+  function surfacePresenter(root: HTMLElement, ready: Promise<void> = Promise.resolve()) {
     const sent: string[] = [];
     const state = { offset: 0, historySize: 100, disposed: false, rendered: 42 };
     const screen = root.ownerDocument.createElement("div");
@@ -772,6 +772,7 @@ describe("surface delivery", () => {
       size: () => ({ cols: 80, rows: 24 }),
       read: () => "surface",
       waitForText: async () => "surface",
+      ready: () => ready,
       focus: () => true,
       sendText: async (data: string) => { sent.push(data); },
       renderedOutputSequence: () => state.rendered,
@@ -805,14 +806,14 @@ describe("surface delivery", () => {
       },
     };
   }
-  const surfaceAdapter = () => {
+  const surfaceAdapter = (ready: Promise<void> = Promise.resolve()) => {
     let last: ReturnType<typeof surfacePresenter> | null = null;
     const adapter = {
       delivery: "surface",
       rendererId: "vision-surface",
       rendererProfile: "native-surface",
       create: (root: HTMLElement) => {
-        last = surfacePresenter(root);
+        last = surfacePresenter(root, ready);
         return last.presenter;
       },
     } as never;
@@ -834,6 +835,19 @@ describe("surface delivery", () => {
     expect(pane.status.current().rendererProfile).toBe("native-surface");
     expect(pane.status.current().presentation.delivery).toBe("surface");
     expect(pane.root.dataset.terminalOperation).toBe("ready");
+  });
+
+  it("does not publish live or writable before the surface owner is ready", async () => {
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => { release = resolve; });
+    const { adapter } = surfaceAdapter(ready);
+    const { pane } = surfaceMount(adapter);
+    await Promise.resolve();
+    expect(pane.status.current().phase).not.toBe("live");
+    expect(pane.writable).toBe(false);
+    release();
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    expect(pane.writable).toBe(true);
   });
 
   it("routes input through the presenter and never the pty", async () => {
