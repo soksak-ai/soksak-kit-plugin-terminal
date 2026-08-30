@@ -808,22 +808,32 @@ describe("surface delivery", () => {
   }
   const surfaceAdapter = (ready: Promise<void> = Promise.resolve()) => {
     let last: ReturnType<typeof surfacePresenter> | null = null;
+    let receivedOptions: Record<string, unknown> | null = null;
     const adapter = {
       delivery: "surface",
       rendererId: "vision-surface",
       rendererProfile: "native-surface",
-      create: (root: HTMLElement) => {
+      create: (root: HTMLElement, _pane: string, _send: (text: string) => void, options: Record<string, unknown>) => {
+        receivedOptions = options;
         last = surfacePresenter(root, ready);
         return last.presenter;
       },
     } as never;
-    return { adapter, created: () => last! };
+    return { adapter, created: () => last!, options: () => receivedOptions };
   };
-  const surfaceMount = (adapter: never) => {
+  const surfaceMount = (adapter: never, extra: Partial<Parameters<typeof createPaneSession>[0]> = {}) => {
     const { binding, recovery } = fakeBinding(() => ({ ok: true, data: {} }));
-    const view = mount(binding, { config: { pluginId: "plugin", engineId: "vt100", renderer: adapter } });
+    const view = mount(binding, {
+      config: { pluginId: "plugin", engineId: "vt100", renderer: adapter }, ...extra,
+    });
     return { ...view, binding, recovery };
   };
+
+  it("gives the surface owner the pane's declared initial cwd", () => {
+    const { adapter, options } = surfaceAdapter();
+    surfaceMount(adapter, { cwd: "/workspace/project" });
+    expect(options()).toMatchObject({ cwd: "/workspace/project" });
+  });
 
   it("opens no session and polls no frame", async () => {
     const { adapter } = surfaceAdapter();

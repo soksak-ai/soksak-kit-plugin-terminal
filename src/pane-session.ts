@@ -75,6 +75,8 @@ export interface TerminalRendererAdapter {
 export interface TerminalPresenterOptions {
   nodeSuffix: string | null;
   containerGeneration: number;
+  /** Initial working directory declared by the owning project, or null when none was declared. */
+  cwd: string | null;
   hostPixels(): { width: number; height: number };
   requestViewport(offset: number): void;
 }
@@ -257,7 +259,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   const send = (text: string) => { void writeToPty(text, true).catch(() => {}); };
   let viewportRequest: ((offset: number) => void) | null = null;
   const presenterOptions = {
-    nodeSuffix, containerGeneration: config.containerGeneration ?? 1, hostPixels,
+    nodeSuffix, containerGeneration: config.containerGeneration ?? 1, cwd: input.cwd ?? null, hostPixels,
     requestViewport: (next: number) => viewportRequest?.(next),
   };
   const presenter: TerminalPresenter = config.renderer
