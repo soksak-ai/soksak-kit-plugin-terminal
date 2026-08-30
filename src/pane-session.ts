@@ -50,8 +50,8 @@ export interface TerminalPresenter {
   // A renderer that owns its own scrollback answers where it is and moves on request. offset counts
   // rows back into history, as the terminal contract declares it.
   scrollState?(): { offset: number; historySize: number };
-  scrollLines?(lines: number): void;
-  scrollTo?(offset: number): void;
+  scrollLines?(lines: number): void | Promise<void>;
+  scrollTo?(offset: number): void | Promise<void>;
   dispose(): void;
 }
 
@@ -855,10 +855,10 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       if (presenter.scrollState) {
         const state = presenter.scrollState();
         const bounded = (value: number) => Math.max(0, Math.min(state.historySize, Math.floor(value)));
-        if (request.edge === "top") presenter.scrollTo?.(state.historySize);
-        else if (request.edge === "bottom") presenter.scrollTo?.(0);
-        else if (typeof request.offset === "number") presenter.scrollTo?.(bounded(request.offset));
-        else if (typeof request.lines === "number") presenter.scrollLines?.(request.lines);
+        if (request.edge === "top") await presenter.scrollTo?.(state.historySize);
+        else if (request.edge === "bottom") await presenter.scrollTo?.(0);
+        else if (typeof request.offset === "number") await presenter.scrollTo?.(bounded(request.offset));
+        else if (typeof request.lines === "number") await presenter.scrollLines?.(request.lines);
         const moved = presenter.scrollState();
         return { pane: key, offset: moved.offset, historySize: moved.historySize, followMode: moved.offset === 0 ? "follow" : "pinned" };
       }

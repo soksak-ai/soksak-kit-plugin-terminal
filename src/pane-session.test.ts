@@ -334,8 +334,14 @@ describe("scrolling a byte-delivery pane", () => {
             focus: () => true, dispose: () => {},
             writeOutput: () => {}, applySnapshot: () => {}, onRendered: () => ({ dispose: () => {} }),
             scrollState: () => ({ offset, historySize: 120 }),
-            scrollLines: (lines: number) => { offset = Math.max(0, Math.min(120, offset + lines)); },
-            scrollTo: (next: number) => { offset = Math.max(0, Math.min(120, next)); },
+            scrollLines: async (lines: number) => {
+              await Promise.resolve();
+              offset = Math.max(0, Math.min(120, offset + lines));
+            },
+            scrollTo: async (next: number) => {
+              await Promise.resolve();
+              offset = Math.max(0, Math.min(120, next));
+            },
           } as never),
         },
       },
