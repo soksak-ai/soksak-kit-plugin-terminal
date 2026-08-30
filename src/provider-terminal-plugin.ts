@@ -394,6 +394,8 @@ export function activateProviderTerminalPlugin(
     focusedInput: { type: "boolean", description: { en: "Focused input state", ko: "입력 포커스 상태" } },
     cursorVisible: { type: "boolean", description: { en: "Visible cursor state", ko: "커서 표시 상태" } },
     cursorActive: { type: "boolean", description: { en: "Active cursor state", ko: "활성 커서 상태" } },
+    acceptedInputSequenceGreaterThan: { type: "number", description: { en: "Input admission sequence strictly above this value", ko: "이 값보다 큰 input admission 순서" } },
+    ptyWriteSequenceGreaterThan: { type: "number", description: { en: "PTY write sequence strictly above this value", ko: "이 값보다 큰 PTY write 순서" } },
     themeMode: { type: "string", enum: ["light", "dark"], description: { en: "Presented terminal theme mode", ko: "표시된 터미널 테마 모드" } },
     effectiveBackground: { type: "string", description: { en: "Presented effective background color", ko: "표시된 최종 배경색" } },
     historySize: { type: "number", description: { en: "Exact history size", ko: "정확한 기록 크기" } },
@@ -417,6 +419,10 @@ export function activateProviderTerminalPlugin(
         ...(typeof params.focusedInput === "boolean" ? { focusedInput: params.focusedInput } : {}),
         ...(typeof params.cursorVisible === "boolean" ? { cursorVisible: params.cursorVisible } : {}),
         ...(typeof params.cursorActive === "boolean" ? { cursorActive: params.cursorActive } : {}),
+        ...(typeof params.acceptedInputSequenceGreaterThan === "number"
+          ? { acceptedInputSequenceGreaterThan: params.acceptedInputSequenceGreaterThan } : {}),
+        ...(typeof params.ptyWriteSequenceGreaterThan === "number"
+          ? { ptyWriteSequenceGreaterThan: params.ptyWriteSequenceGreaterThan } : {}),
       },
       theme: {
         ...(params.themeMode === "light" || params.themeMode === "dark"

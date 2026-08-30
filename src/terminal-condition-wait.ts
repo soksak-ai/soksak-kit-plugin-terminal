@@ -11,7 +11,13 @@ export interface TerminalConditionWaitOptions {
   waitForText(contains: string, timeoutMs: number): Promise<string>;
   size?: { cols?: number; colsLessThan?: number; colsGreaterThan?: number; rows?: number };
   waitForSize?(condition: { cols?: number; colsLessThan?: number; colsGreaterThan?: number; rows?: number }, timeoutMs: number): Promise<{ cols: number; rows: number }>;
-  presentation?: { focusedInput?: boolean; cursorVisible?: boolean; cursorActive?: boolean };
+  presentation?: {
+    focusedInput?: boolean;
+    cursorVisible?: boolean;
+    cursorActive?: boolean;
+    acceptedInputSequenceGreaterThan?: number;
+    ptyWriteSequenceGreaterThan?: number;
+  };
   theme?: { themeMode?: "light" | "dark"; effectiveBackground?: string };
   viewport?: {
     historySize?: number;
@@ -46,7 +52,13 @@ export async function waitForTerminalConditions(
       && (options.presentation.cursorVisible === undefined
         || next.presentation.cursorVisible === options.presentation.cursorVisible)
       && (options.presentation.cursorActive === undefined
-        || next.presentation.cursorActive === options.presentation.cursorActive));
+        || next.presentation.cursorActive === options.presentation.cursorActive)
+      && (options.presentation.acceptedInputSequenceGreaterThan === undefined
+        || next.presentation.acceptedInputSequence
+          > options.presentation.acceptedInputSequenceGreaterThan)
+      && (options.presentation.ptyWriteSequenceGreaterThan === undefined
+        || next.presentation.ptyWriteSequence
+          > options.presentation.ptyWriteSequenceGreaterThan));
     const themeMatches = !options.theme
       || ((options.theme.themeMode === undefined
         || next.presentation.themeMode === options.theme.themeMode)
