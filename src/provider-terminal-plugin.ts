@@ -8,7 +8,9 @@ import {
   type TerminalPluginViewStatus,
 } from "@soksak/soksak-contract-plugin-terminal";
 import { createPaneSet, type PaneSet, type PaneSetContext, type PaneSetHost } from "./pane-set";
-import type { PaneSession, TerminalPresenter, TerminalPresenterFactory, TerminalRendererAdapter } from "./pane-session";
+import type {
+  PaneSession, TerminalInlineImage, TerminalPresenter, TerminalPresenterFactory, TerminalRendererAdapter,
+} from "./pane-session";
 import { rendererDelivery } from "./pane-session";
 import { paneStopBarriers } from "./pane-stop-barriers";
 import { createTerminalSessionBinding, type TerminalSessionBinding } from "./terminal-session-binding";
@@ -72,6 +74,7 @@ export interface ProviderTerminalPluginHost extends PaneSetHost {
     redeem(id: string): Promise<{
       kind: "file" | "image";
       path: string;
+      inline?: TerminalInlineImage;
     } | null>;
   };
   // The plugin's user settings (manifest configuration); the engine selection is read here.
@@ -604,10 +607,18 @@ export function activateProviderTerminalPlugin(
       }
     }
     let accepted = 0;
-    if (found?.pane.writable && mode === "path" && redeemed.length > 0) {
-      const shell = await terminalLoginShell(host.commands);
-      await found.pane.write(`${redeemed.map((grant) => quoteTerminalDropPath(grant.path, shell)).join(" ")} `);
-      accepted = redeemed.length;
+    if (found?.pane.writable && redeemed.length > 0) {
+      if (mode === "path") {
+        const shell = await terminalLoginShell(host.commands);
+        await found.pane.write(`${redeemed.map((grant) => quoteTerminalDropPath(grant.path, shell)).join(" ")} `);
+        accepted = redeemed.length;
+      } else if (found.pane.presenter.presentInlineImage) {
+        for (const grant of redeemed) {
+          const image = grant.kind === "image" ? grant.inline : undefined;
+          if (!image || image.protocol === "" || image.data === "") continue;
+          if (await found.pane.presenter.presentInlineImage(image)) accepted += 1;
+        }
+      }
     }
     const result = { pane: found?.pane.key ?? null, accepted, mode };
     const drop = found?.pane.root.querySelector<HTMLElement>('[data-node^="terminal-drop-target"]');

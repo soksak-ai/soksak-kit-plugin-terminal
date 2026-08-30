@@ -38,7 +38,7 @@ export interface TerminalPresenter {
   selection?(): string | Promise<string>;
   compose?(updates: string[], data: string): number;
   modes?(): ProviderFrameModes;
-  presentInlineImage?(image: { protocol: string; data: string }): Promise<boolean> | boolean;
+  presentInlineImage?(image: TerminalInlineImage): Promise<boolean> | boolean;
   /** Resolves only when this mounted renderer generation owns a usable backing session. */
   ready?(): Promise<void>;
   waitForText(contains: string, timeoutMs: number): Promise<string>;
@@ -55,6 +55,11 @@ export interface TerminalPresenter {
   scrollLines?(lines: number): void | Promise<void>;
   scrollTo?(offset: number): void | Promise<void>;
   dispose(): void;
+}
+
+export interface TerminalInlineImage {
+  protocol: string;
+  data: string;
 }
 
 export interface TerminalVisibilityState {
