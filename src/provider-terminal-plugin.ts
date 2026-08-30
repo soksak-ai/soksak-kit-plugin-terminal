@@ -194,9 +194,10 @@ export function activateProviderTerminalPlugin(
     handler: (params: Record<string, unknown>, context?: { pane?: string }) => unknown,
     danger?: "inject",
   ) => {
+    const commandLabel = config.label ?? { en: "Terminal", ko: "터미널" };
     const description = {
-      en: `${config.engineId} terminal ${name}`,
-      ko: `${config.engineId} 터미널 ${name}`,
+      en: `${commandLabel.en} ${name}`,
+      ko: `${commandLabel.ko} ${name}`,
     };
     const schema = TERMINAL_PLUGIN_COMMAND_SCHEMAS[name as TerminalPluginCommand];
     const disposable = host.commands.register(name, {

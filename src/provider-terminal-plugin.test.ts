@@ -624,6 +624,37 @@ describe("provider-backed terminal plugin", () => {
     }
   });
 
+  it("does not label multi-engine commands as the default engine", () => {
+    const registered = new Map<string, Record<string, unknown>>();
+    const host: ProviderTerminalPluginHost = {
+      windowLabel: () => "window",
+      secrets: { generate: async () => ({ created: true }) },
+      settings: { get: () => "vt100" },
+      sidecar: { open: async () => ({
+        send: async () => ({ ok: true, result: { data: {} } }),
+        stream: async () => ({ answer: { ok: true, result: { data: {} } }, close: settledClose() }),
+      }) },
+      ui: { registerView: () => ({ dispose() {} }) },
+      commands: {
+        register: (name, spec) => { registered.set(name, spec); return { dispose() {} }; },
+        execute: async () => ({ data: { loginShell: "/bin/zsh" } }),
+      },
+    };
+    activateProviderTerminalPlugin(host, [], {
+      pluginId: "plugin", engineId: "alacritty", ptySidecarId: "soksak-sidecar-pty",
+      terminalSidecarId: "soksak-sidecar-terminal-alacritty", programId: "terminal",
+      engines: { setting: "engine", sidecars: {
+        alacritty: "soksak-sidecar-terminal-alacritty",
+        vt100: "soksak-sidecar-terminal-vt100",
+      } },
+      label: { en: "Vision Terminal", ko: "Vision 터미널" },
+    });
+    expect(registered.get("scroll")!.description).toEqual({
+      en: "Vision Terminal scroll",
+      ko: "Vision 터미널 scroll",
+    });
+  });
+
   it("detaches presentation without ending the PTY session", async () => {
     let view: View | undefined;
     const requests: string[] = [];
