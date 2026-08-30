@@ -19,15 +19,15 @@ test("repository owns public metadata", () => {
     "git+https://github.com/soksak-ai/soksak-kit-plugin-terminal.git",
   );
   const kit = JSON.parse(readFileSync(join(root, "kit.json"), "utf8"));
-  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.100" });
+  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.101" });
   assert.equal(pkg.version, kit.version);
   assert.equal(pkg.private, false);
   assert.match(pkg.engines.node, /^\d+\.\d+\.\d+$/);
   assert.equal(nodeVersion, pkg.engines.node);
   assert.match(pkg.packageManager, /^pnpm@\d+\.\d+\.\d+$/);
   assert.equal("pnpm" in pkg, false);
-  assert.equal(pkg.peerDependencies["@soksak/soksak-contract-plugin-terminal"], "0.0.19");
-  assert.equal(pkg.devDependencies["@soksak/soksak-contract-plugin-terminal"], "0.0.19");
+  assert.equal(pkg.peerDependencies["@soksak/soksak-contract-plugin-terminal"], "0.0.21");
+  assert.equal(pkg.devDependencies["@soksak/soksak-contract-plugin-terminal"], "0.0.21");
   assert.equal(pkg.dependencies, undefined);
   assert.match(readFileSync(join(root, "pnpm-workspace.yaml"), "utf8"), /allowBuilds:\n  esbuild: true/);
   const releaseFiles = JSON.parse(readFileSync(join(root, "release-files.json"), "utf8"));
