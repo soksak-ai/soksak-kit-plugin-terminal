@@ -1,6 +1,6 @@
 # soksak-kit-plugin-terminal
 
-`soksak-spec-plugin-terminal` 0.0.21을 구현하는 터미널 플러그인의 공통 브라우저 구현입니다.
+`soksak-spec-plugin-terminal` 0.0.22를 구현하는 터미널 플러그인의 공통 브라우저 구현입니다.
 
 이 kit가 view 등록, PTY 및 복원 수명 주기, 크기 변경, 공개 상태와 터미널 계약의 모든
 표준 명령을 소유합니다. 플러그인은 엔진별 렌더링, 입력, IME, focus와 snapshot 적용을
@@ -43,8 +43,10 @@ Selection, copy, paste, drop은 공통 Kit 동작입니다. Copy와 암시적 pa
 capability만 사용합니다. Paste는 활성 presenter가 해당 engine mode를 보고할 때만 bracketed-paste
 marker로 text를 감쌉니다. File drop은 불투명한 host grant만 받습니다. Host는 grant를 허용된 raw path로
 redeem하고, 이 Kit이 `app.environment`에서 읽은 login shell에 맞춰 quote합니다. Core는 shell 문법을
-소유하지 않으며 command가 raw path를 grant처럼 주입할 수 없습니다. Inline mode는 presenter capability가
-있을 때만 실행하며 path 입력으로 fallback하지 않습니다. Pane은 `terminal-drop-target`, clipboard
+소유하지 않으며 command가 raw path를 grant처럼 주입할 수 없습니다. Inline 이미지는 별도
+`image.present` command를 사용합니다. Host는 하나의 불투명 resource lease를 열고 해제하며, presenter는
+protocol·MIME limit을 선언하고 허용된 byte stream을 소비합니다. File path를 빌리거나 path 입력으로
+fallback하지 않습니다. Pane은 `terminal-drop-target`, clipboard
 permission, selection, bracketed-paste mode, 마지막 accepted/refused drop을 status·DOM data·event로
 노출합니다.
 

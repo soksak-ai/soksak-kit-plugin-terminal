@@ -1,8 +1,11 @@
 import type {
   TerminalDropResultStatus,
+  TerminalInlineImageRefusal,
+  TerminalInlineImageStatus,
   TerminalPresentationStatus,
   TerminalThemeStatus,
 } from "@soksak/soksak-contract-plugin-terminal";
+import { validateTerminalInlineImageStatus } from "@soksak/soksak-contract-plugin-terminal";
 import { publishTerminalThemeStatus } from "./terminal-theme";
 
 let nextMountSequence = 0;
@@ -24,7 +27,7 @@ function lastDrop(root: ParentNode, suffix: string | null): TerminalDropResultSt
     const value = JSON.parse(raw) as Partial<TerminalDropResultStatus>;
     return Number.isSafeInteger(value.accepted) && Number(value.accepted) >= 0
       && Number.isSafeInteger(value.refused) && Number(value.refused) >= 0
-      && (value.mode === "path" || value.mode === "inline")
+      && value.mode === "path"
       ? { accepted: Number(value.accepted), refused: Number(value.refused), mode: value.mode }
       : null;
   } catch {
@@ -48,6 +51,9 @@ export function createTerminalPresentationStatus(
   now: () => number = Date.now,
   nodeSuffix: string | null = null,
   pane: string = "",
+  inlineImages: () => TerminalInlineImageStatus = () => ({
+    inlineImageProtocols: [], inlineImageLimits: {}, inlineImageRefusal: null,
+  }),
 ): TerminalPresentationStatusController {
   const mountedAtUnixMs = now();
   const mountSequence = ++nextMountSequence;
@@ -85,6 +91,16 @@ export function createTerminalPresentationStatus(
       publishedThemeKey = JSON.stringify(publishedTheme);
       publishedScreen = screen;
     }
+    const imageStatus = inlineImages();
+    let lastRefusal: TerminalInlineImageRefusal | null = null;
+    const rawRefusal = root.dataset.inlineImageRefusal;
+    if (rawRefusal) {
+      try { lastRefusal = JSON.parse(rawRefusal) as TerminalInlineImageRefusal; }
+      catch { throw new Error("terminal inline image refusal state is invalid JSON"); }
+    }
+    const publishedImages = { ...imageStatus, inlineImageRefusal: lastRefusal ?? imageStatus.inlineImageRefusal };
+    const imageErrors = validateTerminalInlineImageStatus(publishedImages);
+    if (imageErrors.length > 0) throw new Error(`terminal inline image status is invalid: ${imageErrors.join("; ")}`);
     return {
       delivery,
       mountSequence,
@@ -108,6 +124,7 @@ export function createTerminalPresentationStatus(
           ? "available" : "unavailable",
         last: lastDrop(root, nodeSuffix),
       },
+      ...publishedImages,
       cursorVisible: screen?.dataset.cursorVisible === "true",
       cursorActive: screen?.dataset.cursorActive === "true",
       cursorShape: cursorShape === "underline" || cursorShape === "bar" ? cursorShape : "block",
@@ -180,6 +197,9 @@ export function closedTerminalPresentation(
     selection: { active: false, text: "" },
     clipboardPermission: { read: false, write: false },
     drop: { fileGrantState: "unavailable", last: null },
+    inlineImageProtocols: [],
+    inlineImageLimits: {},
+    inlineImageRefusal: null,
     cursorVisible: false,
     cursorActive: false,
     cursorShape: "block",

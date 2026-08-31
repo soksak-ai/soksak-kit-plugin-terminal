@@ -1,4 +1,5 @@
 import type {
+  TerminalImageResource, TerminalInlineImageProtocol, TerminalInlineImageStatus,
   TerminalPluginPublicStatus, TerminalPresentationStatus, TerminalThemeStatus,
 } from "@soksak/soksak-contract-plugin-terminal";
 import {
@@ -38,7 +39,8 @@ export interface TerminalPresenter {
   selection?(): string | Promise<string>;
   compose?(updates: string[], data: string): number;
   modes?(): ProviderFrameModes;
-  presentInlineImage?(image: TerminalInlineImage): Promise<boolean> | boolean;
+  inlineImageStatus?(): TerminalInlineImageStatus;
+  presentInlineImage?(image: TerminalInlineImagePresentation): Promise<boolean> | boolean;
   /** Resolves only when this mounted renderer generation owns a usable backing session. */
   ready?(): Promise<void>;
   waitForText(contains: string, timeoutMs: number): Promise<string>;
@@ -57,9 +59,10 @@ export interface TerminalPresenter {
   dispose(): void;
 }
 
-export interface TerminalInlineImage {
-  protocol: string;
-  data: string;
+export interface TerminalInlineImagePresentation {
+  resource: TerminalImageResource;
+  protocol: TerminalInlineImageProtocol;
+  stream: ReadableStream<Uint8Array>;
 }
 
 export interface TerminalVisibilityState {
@@ -295,6 +298,9 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     root, rendererDelivery(config.renderer),
     () => presenter.themeStatus?.() ?? readTerminalThemeStatus(document.documentElement),
     now, nodeSuffix, key,
+    () => presenter.inlineImageStatus?.() ?? {
+      inlineImageProtocols: [], inlineImageLimits: {}, inlineImageRefusal: null,
+    },
   );
   if (bytesDelivery && (!presenter.writeOutput || !presenter.applySnapshot || !presenter.onRendered)) {
     throw new Error("byte renderer requires parser and rendered-frame completion contracts");

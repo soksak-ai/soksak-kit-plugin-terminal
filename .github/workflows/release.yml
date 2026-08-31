@@ -1,20 +1,32 @@
 name: release
+
 on:
   workflow_dispatch:
     inputs:
-      spec_url:
-        description: Exact immutable soksak-spec package URL from the release train
+      sdk_archive_url:
+        description: Exact immutable soksak-sdk archive URL from the release train
         required: true
         type: string
-      spec_sha256:
-        description: SHA-256 of the exact soksak-spec package
+      sdk_archive_sha256:
+        description: SHA-256 of the exact soksak-sdk archive
         required: true
         type: string
+      sdk_release_url:
+        description: Exact immutable soksak-sdk release.json URL
+        required: true
+        type: string
+      sdk_release_sha256:
+        description: SHA-256 of the exact soksak-sdk release.json
+        required: true
+        type: string
+
 permissions:
   contents: read
+
 concurrency:
   group: release-${{ github.repository }}
   cancel-in-progress: false
+
 jobs:
   release:
     if: github.ref == 'refs/heads/main'
@@ -25,20 +37,6 @@ jobs:
         with:
           path: component
           persist-credentials: false
-      - name: Inject the exact spec validation tool
-        run: |
-          case "${{ inputs.spec_url }}" in
-            https://github.com/soksak-ai/soksak-spec/releases/download/v*/soksak-ai-plugin-spec-*.tgz) ;;
-            *) echo "spec_url is not an immutable soksak-spec release asset" >&2; exit 1 ;;
-          esac
-          digest="${{ inputs.spec_sha256 }}"
-          test "${#digest}" -eq 64
-          case "$digest" in *[!a-f0-9]*) echo "spec_sha256 is invalid" >&2; exit 1 ;; esac
-          mkdir -p spec-package
-          curl -fsSL "${{ inputs.spec_url }}" -o soksak-spec.tgz
-          test "$(sha256sum soksak-spec.tgz | awk '{print $1}')" = "$digest"
-          tar -xzf soksak-spec.tgz -C spec-package --strip-components=1
-          test -z "$(find spec-package -type l -print -quit)"
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
         with:
           package_json_file: component/package.json
@@ -47,10 +45,34 @@ jobs:
           node-version-file: component/.node-version
           cache: pnpm
           cache-dependency-path: component/pnpm-lock.yaml
-      - working-directory: component
-        run: make verify
-      - working-directory: component
-        run: node ../spec-package/release-template/build-portable-release.mjs --commit "${{ github.sha }}" --out "$GITHUB_WORKSPACE/artifacts"
+      - name: Materialize the exact Component Tooling release
+        shell: bash
+        run: |
+          case "${{ inputs.sdk_archive_url }}" in
+            https://github.com/soksak-ai/soksak-sdk/releases/download/v*/soksak-sdk-*-any.tgz) ;;
+            *) echo "sdk_archive_url is not an immutable SDK release asset" >&2; exit 1 ;;
+          esac
+          case "${{ inputs.sdk_release_url }}" in
+            https://github.com/soksak-ai/soksak-sdk/releases/download/v*/release.json) ;;
+            *) echo "sdk_release_url is not an immutable SDK release document" >&2; exit 1 ;;
+          esac
+          mkdir -p "$RUNNER_TEMP/soksak-sdk"
+          curl -fsSL "${{ inputs.sdk_archive_url }}" -o "$RUNNER_TEMP/soksak-sdk.tgz"
+          curl -fsSL "${{ inputs.sdk_release_url }}" -o "$RUNNER_TEMP/soksak-sdk-release.json"
+          archive_sha="$(sha256sum "$RUNNER_TEMP/soksak-sdk.tgz" | awk '{print $1}')"
+          release_sha="$(sha256sum "$RUNNER_TEMP/soksak-sdk-release.json" | awk '{print $1}')"
+          test "$archive_sha" = "${{ inputs.sdk_archive_sha256 }}"
+          test "$release_sha" = "${{ inputs.sdk_release_sha256 }}"
+          declared_archive_sha="$(node -e 'const fs=require("fs");const r=JSON.parse(fs.readFileSync(process.argv[1]));process.stdout.write(r.artifacts[0].sha256)' "$RUNNER_TEMP/soksak-sdk-release.json")"
+          test "$declared_archive_sha" = "$archive_sha"
+          tar -xzf "$RUNNER_TEMP/soksak-sdk.tgz" -C "$RUNNER_TEMP/soksak-sdk" --strip-components=1
+          cp "$RUNNER_TEMP/soksak-sdk-release.json" "$RUNNER_TEMP/soksak-sdk/release.json"
+          test -z "$(find "$RUNNER_TEMP/soksak-sdk" -type l -print -quit)"
+          "$RUNNER_TEMP/soksak-sdk/bin/soksak-sdk" prepare
+          echo "$RUNNER_TEMP/soksak-sdk/bin" >> "$GITHUB_PATH"
+      - name: Prove and attest the complete release from the clean checkout
+        working-directory: component
+        run: make attest OUT="$PWD/artifacts" COMMIT="${{ github.sha }}" REGISTRY=https://registry.npmjs.org/
       - id: release-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
         with:
@@ -58,10 +80,11 @@ jobs:
           private-key: ${{ secrets.SOKSAK_RELEASE_PRIVATE_KEY }}
           permission-administration: read
           permission-contents: write
-      - working-directory: component
+      - name: Publish the canonical immutable release
+        working-directory: component
         env:
           SOKSAK_RELEASE_TOKEN: ${{ steps.release-token.outputs.token }}
           GH_TOKEN: ${{ steps.release-token.outputs.token }}
         run: |
-          test "$(gh api repos/${{ github.repository }}/immutable-releases --jq '.enabled and .enforced_by_owner')" = true
-          node ../spec-package/release-template/publish-canonical-release.mjs --repository "${{ github.repository }}" --commit "${{ github.sha }}" --artifacts "$GITHUB_WORKSPACE/artifacts" --manifest "$GITHUB_WORKSPACE/artifacts/release.json"
+          test "$(gh api "repos/${{ github.repository }}/immutable-releases" --jq '.enabled and .enforced_by_owner')" = true || { echo "owner-enforced immutable releases must be enabled before tagging" >&2; exit 1; }
+          node "$RUNNER_TEMP/soksak-sdk/.dependencies/soksak-spec/release-template/publish-canonical-release.mjs" --repository "${{ github.repository }}" --commit "${{ github.sha }}" --artifacts "$PWD/artifacts" --manifest "$PWD/artifacts/release.json"

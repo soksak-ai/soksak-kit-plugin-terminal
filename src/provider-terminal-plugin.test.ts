@@ -304,13 +304,13 @@ describe("provider-backed terminal plugin", () => {
     const redeem = vi.fn(async (id: string) => id === "grant-file"
       ? { kind: "file" as const, path: "/tmp/a b" }
       : id === "grant-image"
-        ? {
-            kind: "image" as const,
-            path: "/tmp/image.png",
-            inline: { protocol: "terminal-image-v1", data: "aW1hZ2U=" },
-          }
+        ? { kind: "image" as const, path: "/tmp/image.png" }
         : null);
     const presentInlineImage = vi.fn(async () => true);
+    const openResource = vi.fn(async () => new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new Uint8Array([1, 2, 3])); controller.close(); },
+    }));
+    const releaseResource = vi.fn(async () => {});
     const events: string[] = [];
     let onDropped: ((payload: { paneId: string | null; grants: Array<{ id: string; kind: "file" | "image" }> }) => void) | undefined;
     const host: ProviderTerminalPluginHost = {
@@ -319,6 +319,7 @@ describe("provider-backed terminal plugin", () => {
       sidecar: { open: async () => channel as never },
       clipboard: { readText, writeText },
       fileGrants: { redeem },
+      resources: { open: openResource, release: releaseResource },
       events: {
         on: ((event: string, callback: (payload: never) => void) => {
           if (event === "paths.dropped") onDropped = callback as typeof onDropped;
@@ -337,6 +338,11 @@ describe("provider-backed terminal plugin", () => {
       presenter: (root) => ({
         root, size: () => ({ cols: 80, rows: 24 }), read: () => "screen",
         selection: async () => "selected", modes: () => ({ bracketedPaste: true }),
+        inlineImageStatus: () => ({
+          inlineImageProtocols: ["kitty-graphics"],
+          inlineImageLimits: { "kitty-graphics": { maxBytes: 1024, supportedMimeTypes: ["image/png"] } },
+          inlineImageRefusal: null,
+        }),
         presentInlineImage,
         waitForText: async () => "screen", focus: () => true, dispose() {},
       }),
@@ -345,6 +351,7 @@ describe("provider-backed terminal plugin", () => {
     for (const event of [
       "soksak:terminal-clipboard-copied", "soksak:terminal-clipboard-pasted",
       "soksak:terminal-drop-accepted", "soksak:terminal-drop-refused",
+      "soksak:terminal-image-presented", "soksak:terminal-image-refused",
     ]) root.addEventListener(event, () => events.push(event));
     document.body.append(root);
     view!.mount(root, { viewId: "pane" });
@@ -360,37 +367,85 @@ describe("provider-backed terminal plugin", () => {
     await expect(call("paste")).resolves.toMatchObject({ pane: "pane.1", pasted: true });
     const pasted = requests.filter((request) => request.command === "pty.write").at(-1)?.payload.dataB64;
     expect(decode(pasted)).toBe("\x1b[200~붙여넣기\x1b[201~");
-    await expect(call("drop", { grants: ["grant-file", "missing"], mode: "path" }))
-      .resolves.toEqual({ pane: "pane.1", accepted: 1, mode: "path" });
+    await expect(call("drop", { grants: ["grant-file", "missing"] }))
+      .resolves.toEqual({ pane: "pane.1", accepted: 1, refused: 1, mode: "path" });
     const dropped = requests.filter((request) => request.command === "pty.write").at(-1)?.payload.dataB64;
     expect(decode(dropped)).toBe("'/tmp/a b' ");
-    await expect(call("drop", { grants: ["grant-image"], mode: "inline" }))
-      .resolves.toEqual({ pane: "pane.1", accepted: 1, mode: "inline" });
-    expect(presentInlineImage).toHaveBeenCalledWith({
-      protocol: "terminal-image-v1", data: "aW1hZ2U=",
+    const resource = {
+      resourceId: "image.resource-1", mime: "image/png", sizeBytes: 3,
+      lifetime: { kind: "single-presentation", expiresAtUnixMs: Date.now() + 60_000 },
+    } as const;
+    await expect(call("image.present", { resource, protocol: "kitty-graphics" })).resolves.toEqual({
+      pane: "pane.1", resourceId: resource.resourceId, presented: true,
+      protocol: "kitty-graphics", refusal: null,
     });
+    expect(openResource).toHaveBeenCalledWith(resource.resourceId);
+    expect(releaseResource).toHaveBeenCalledWith(resource.resourceId);
+    expect(presentInlineImage).toHaveBeenCalledWith(expect.objectContaining({
+      resource, protocol: "kitty-graphics", stream: expect.any(ReadableStream),
+    }));
     expect(events).toEqual([
       "soksak:terminal-clipboard-copied", "soksak:terminal-clipboard-pasted",
-      "soksak:terminal-drop-accepted", "soksak:terminal-drop-accepted",
+      "soksak:terminal-drop-accepted", "soksak:terminal-image-presented",
     ]);
     const drop = root.querySelector<HTMLElement>('[data-node="terminal-drop-target/1"]')!;
     expect(drop.dataset.fileGrantState).toBe("available");
-    expect(JSON.parse(drop.dataset.lastDrop ?? "null")).toEqual({ accepted: 1, refused: 0, mode: "inline" });
+    expect(JSON.parse(drop.dataset.lastDrop ?? "null")).toEqual({ accepted: 1, refused: 1, mode: "path" });
     await expect(call("status")).resolves.toMatchObject({
       presentation: {
         bracketedPaste: true,
         selection: { active: true, text: "selected" },
         clipboardPermission: { read: true, write: true },
-        drop: { fileGrantState: "available", last: { accepted: 1, refused: 0, mode: "inline" } },
+        drop: { fileGrantState: "available", last: { accepted: 1, refused: 1, mode: "path" } },
+        inlineImageProtocols: ["kitty-graphics"],
+        inlineImageLimits: { "kitty-graphics": { maxBytes: 1024, supportedMimeTypes: ["image/png"] } },
+        inlineImageRefusal: null,
       },
     });
-    const writesBeforeInlineRefusal = requests.filter((request) => request.command === "pty.write").length;
-    await expect(call("drop", { grants: ["grant-file"], mode: "inline" }))
-      .resolves.toEqual({ pane: "pane.1", accepted: 0, mode: "inline" });
+    await expect(call("image.present", { resource })).resolves.toMatchObject({
+      pane: "pane.1", resourceId: resource.resourceId, presented: false,
+      protocol: null, refusal: { code: "resource-unavailable" },
+    });
     expect(presentInlineImage).toHaveBeenCalledTimes(1);
-    expect(requests.filter((request) => request.command === "pty.write")).toHaveLength(writesBeforeInlineRefusal);
-    expect(events.at(-1)).toBe("soksak:terminal-drop-refused");
-    expect(JSON.parse(drop.dataset.lastDrop ?? "null")).toEqual({ accepted: 0, refused: 1, mode: "inline" });
+    expect(releaseResource).toHaveBeenCalledTimes(1);
+    expect(events.at(-1)).toBe("soksak:terminal-image-refused");
+    await expect(call("status")).resolves.toMatchObject({
+      presentation: { inlineImageRefusal: { resourceId: resource.resourceId, code: "resource-unavailable" } },
+    });
+    const refusalCases = [
+      {
+        resource: { ...resource, resourceId: "image.protocol" }, protocol: "private-protocol",
+        code: "unsupported-protocol",
+      },
+      {
+        resource: { ...resource, resourceId: "image.mime", mime: "image/jpeg" },
+        code: "unsupported-mime",
+      },
+      {
+        resource: { ...resource, resourceId: "image.large", sizeBytes: 2048 },
+        code: "resource-too-large",
+      },
+      {
+        resource: {
+          ...resource, resourceId: "image.expired",
+          lifetime: { kind: "single-presentation" as const, expiresAtUnixMs: 1 },
+        },
+        code: "resource-expired",
+      },
+    ];
+    for (const item of refusalCases) {
+      await expect(call("image.present", { resource: item.resource, ...(item.protocol ? { protocol: item.protocol } : {}) }))
+        .resolves.toMatchObject({
+          resourceId: item.resource.resourceId, presented: false,
+          protocol: null, refusal: { code: item.code },
+        });
+    }
+    expect(openResource).toHaveBeenCalledTimes(1);
+    expect(releaseResource).toHaveBeenCalledTimes(5);
+    expect(presentInlineImage).toHaveBeenCalledTimes(1);
+    expect(events.slice(-4)).toEqual(Array(4).fill("soksak:terminal-image-refused"));
+    await expect(call("image.present", { resource: { ...resource, path: "/private/image.png" } }))
+      .rejects.toThrow(/resource[.]path: unknown field/);
     const writesBeforeEvent = requests.filter((request) => request.command === "pty.write").length;
     onDropped?.({ paneId: "pane", grants: [{ id: "grant-file", kind: "file" }] });
     await vi.waitFor(() => {
@@ -626,6 +681,12 @@ describe("provider-backed terminal plugin", () => {
       wait: { phase: "closed" }, send: { data: "x" }, split: { direction: "right" },
       "pane.resize": { side: "right", px: 10 }, "pane.broadcast": { on: true }, "pane.title": { title: null },
       "input.compose": { updates: ["a"], data: "a" },
+      "image.present": {
+        resource: {
+          resourceId: "image.sample", mime: "image/png", sizeBytes: 1,
+          lifetime: { kind: "single-presentation", expiresAtUnixMs: Date.now() + 60_000 },
+        },
+      },
     };
     for (const command of TERMINAL_PLUGIN_COMMANDS) {
       const actual = registered.get(command)!;

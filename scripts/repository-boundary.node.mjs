@@ -19,15 +19,18 @@ test("repository owns public metadata", () => {
     "git+https://github.com/soksak-ai/soksak-kit-plugin-terminal.git",
   );
   const kit = JSON.parse(readFileSync(join(root, "kit.json"), "utf8"));
-  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.101" });
+  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.102" });
   assert.equal(pkg.version, kit.version);
   assert.equal(pkg.private, false);
   assert.match(pkg.engines.node, /^\d+\.\d+\.\d+$/);
   assert.equal(nodeVersion, pkg.engines.node);
   assert.match(pkg.packageManager, /^pnpm@\d+\.\d+\.\d+$/);
   assert.equal("pnpm" in pkg, false);
-  assert.equal(pkg.peerDependencies["@soksak/soksak-contract-plugin-terminal"], "0.0.21");
-  assert.equal(pkg.devDependencies["@soksak/soksak-contract-plugin-terminal"], "0.0.21");
+  assert.equal(pkg.peerDependencies["@soksak/soksak-contract-plugin-terminal"], "0.0.22");
+  assert.equal(
+    pkg.devDependencies["@soksak/soksak-contract-plugin-terminal"],
+    "https://github.com/soksak-ai/soksak-contract-plugin-terminal/releases/download/v0.0.22/soksak-contract-plugin-terminal-0.0.22-any.tgz",
+  );
   assert.equal(pkg.dependencies, undefined);
   assert.match(readFileSync(join(root, "pnpm-workspace.yaml"), "utf8"), /allowBuilds:\n  esbuild: true/);
   const releaseFiles = JSON.parse(readFileSync(join(root, "release-files.json"), "utf8"));
@@ -42,9 +45,18 @@ test("repository owns public metadata", () => {
   const workflow = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
   assert.match(workflow, /node-version-file: component\/[.]node-version/);
   assert.match(workflow, /package_json_file: component\/package\.json/);
-  assert.match(workflow, /inputs\.spec_url|inputs\.spec_sha256/);
-  assert.match(workflow, /make verify/);
-  assert.doesNotMatch(workflow, /soksak-ai-plugin-spec-\d+[.]\d+[.]\d+[.]tgz/);
+  for (const input of ["sdk_archive_url", "sdk_archive_sha256", "sdk_release_url", "sdk_release_sha256"]) {
+    assert.match(workflow, new RegExp(`${input}:`));
+    assert.match(workflow, new RegExp(`inputs\\.${input}`));
+  }
+  assert.doesNotMatch(workflow, /spec_url:|spec_sha256:|soksak-ai-plugin-spec/);
+  assert.match(workflow, /cp "\$RUNNER_TEMP\/soksak-sdk-release[.]json" "\$RUNNER_TEMP\/soksak-sdk\/release[.]json"/);
+  assert.match(workflow, /soksak-sdk["']? prepare/);
+  assert.match(workflow, /make attest/);
+  assert.match(workflow, /OUT=/);
+  assert.match(workflow, /COMMIT=/);
+  assert.match(workflow, /REGISTRY=https:\/\/registry[.]npmjs[.]org\//);
+  assert.match(workflow, /[.]dependencies\/soksak-spec\/release-template\/publish-canonical-release[.]mjs/);
   assert.doesNotMatch(workflow, /repository: soksak-ai\/soksak-spec/);
   assert.match(workflow, /immutable-releases.*enforced_by_owner/);
 });
@@ -55,7 +67,7 @@ test("package is a publishable portable component", () => {
   assert.equal("publishConfig" in pkg, false);
   assert.deepEqual(pkg.files, ["dist", "kit.json", "src", "!src/**/*.test.ts", "LICENSE", "README*"]);
   assert.deepEqual(pkg.exports, { ".": { types: "./src/index.ts", default: "./dist/index.js" } });
-  for (const section of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
+  for (const section of ["dependencies", "peerDependencies", "optionalDependencies"]) {
     for (const [name, spec] of Object.entries(pkg[section] ?? {})) {
       if (name.startsWith("@soksak/")) assert.match(spec, /^\d+\.\d+\.\d+$/, `${section}.${name}`);
     }
@@ -103,7 +115,7 @@ test("Makefile delegates release to the canonical SDK and publish target", () =>
     assert.match(makefile, new RegExp(`^\t@CI=1 PNPM_DISABLE_SELF_UPDATE_CHECK=1 pnpm \\$\\(if \\$\\(findstring command line,\\$\\(origin REGISTRY\\)\\),\\$\\(registry_flags\\)\\) ${script}$`, "m"), script);
   }
   assert.doesNotMatch(makefile, /^\t@pnpm (build|test|typecheck)$/m);
-  assert.match(makefile, /^SDK_VERSION := 0\.0\.19$/m);
+  assert.match(makefile, /^SDK_VERSION := 0\.0\.20$/m);
   assert.match(makefile, /^release: require-tooling require-out verify$/m);
   assert.match(makefile, /soksak-sdk package --root/);
   assert.match(makefile, /^attest: require-tooling require-out release$/m);
@@ -150,7 +162,7 @@ test("prepare exits with the pnpm install status and no workspace message when t
     assert.notEqual(result.status, 0);
     assert.match(result.stdout, /BUILD_ENVIRONMENT_READY/);
     assert.match(result.stdout + result.stderr, /ERR_PNPM_OUTDATED_LOCKFILE/);
-    assert.match(result.stderr, /^make: \*\*\* \[prepare\] Error 1$/m);
+    assert.match(result.stderr, /^make: \*\*\* \[(?:Makefile:\d+: )?prepare\] Error 1$/m);
     assert.doesNotMatch(result.stderr, /Error 65/);
     assert.doesNotMatch(result.stdout + result.stderr, /rewrote pnpm-workspace\.yaml/);
   } finally {

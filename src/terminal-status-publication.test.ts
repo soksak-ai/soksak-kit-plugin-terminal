@@ -15,6 +15,7 @@ const presentation = () => ({
   bracketedPaste: false, selection: { active: false, text: "" },
   clipboardPermission: { read: false, write: false },
   drop: { fileGrantState: "unavailable" as const, last: null },
+  inlineImageProtocols: [], inlineImageLimits: {}, inlineImageRefusal: null,
   cursorVisible: false, cursorActive: false, cursorShape: "block" as const, cursorBlinking: false,
   cursorAnimation: { intervalMs: 0, phase: "steady" as const }, cursorRow: null, cursorColumn: null,
   mountedAtUnixMs: 1, firstVisibleFrameAtUnixMs: null, firstFocusableInputAtUnixMs: null,

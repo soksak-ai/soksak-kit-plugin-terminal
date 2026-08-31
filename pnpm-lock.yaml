@@ -9,8 +9,8 @@ importers:
   .:
     devDependencies:
       '@soksak/soksak-contract-plugin-terminal':
-        specifier: 0.0.21
-        version: 0.0.21
+        specifier: https://github.com/soksak-ai/soksak-contract-plugin-terminal/releases/download/v0.0.22/soksak-contract-plugin-terminal-0.0.22-any.tgz
+        version: https://github.com/soksak-ai/soksak-contract-plugin-terminal/releases/download/v0.0.22/soksak-contract-plugin-terminal-0.0.22-any.tgz
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -387,8 +387,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@soksak/soksak-contract-plugin-terminal@0.0.21':
-    resolution: {integrity: sha512-w9FDoqvHpqYCWjdrJLyJ7u8eWGgvIDZgeJ6le7424XLjyPDs38YEtG20bFyQqePsrfd13fOy5gWhIBd3WwZbcg==}
+  '@soksak/soksak-contract-plugin-terminal@https://github.com/soksak-ai/soksak-contract-plugin-terminal/releases/download/v0.0.22/soksak-contract-plugin-terminal-0.0.22-any.tgz':
+    resolution: {integrity: sha512-ToOzWTW+FjZA99mlO7LwA2ZVofO+9h6dh4KOAFHQx8Hstd+n9IXipB64Pth5p0kG3G7DrfP68aP9RSEcajIUKQ==, tarball: https://github.com/soksak-ai/soksak-contract-plugin-terminal/releases/download/v0.0.22/soksak-contract-plugin-terminal-0.0.22-any.tgz}
+    version: 0.0.22
     engines: {node: 26.7.0}
 
   '@types/chai@5.2.3':
@@ -961,7 +962,7 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.62.4':
     optional: true
 
-  '@soksak/soksak-contract-plugin-terminal@0.0.21': {}
+  '@soksak/soksak-contract-plugin-terminal@https://github.com/soksak-ai/soksak-contract-plugin-terminal/releases/download/v0.0.22/soksak-contract-plugin-terminal-0.0.22-any.tgz': {}
 
   '@types/chai@5.2.3':
     dependencies:

@@ -1,7 +1,15 @@
 import {
+  TERMINAL_INLINE_IMAGE_EVENTS,
+  TERMINAL_INLINE_IMAGE_PROTOCOLS,
   TERMINAL_PLUGIN_COMMANDS,
   TERMINAL_PLUGIN_COMMAND_SCHEMAS,
   parsePaneKey,
+  validateTerminalImageResource,
+  validateTerminalInlineImageStatus,
+  type TerminalImagePresentResult,
+  type TerminalImageResource,
+  type TerminalInlineImageProtocol,
+  type TerminalInlineImageRefusal,
   type TerminalPaneSummary,
   type TerminalPluginCommand,
   type TerminalPluginPublicStatus,
@@ -9,7 +17,7 @@ import {
 } from "@soksak/soksak-contract-plugin-terminal";
 import { createPaneSet, type PaneSet, type PaneSetContext, type PaneSetHost } from "./pane-set";
 import type {
-  PaneSession, TerminalInlineImage, TerminalPresenter, TerminalPresenterFactory, TerminalRendererAdapter,
+  PaneSession, TerminalPresenter, TerminalPresenterFactory, TerminalRendererAdapter,
 } from "./pane-session";
 import { rendererDelivery } from "./pane-session";
 import { paneStopBarriers } from "./pane-stop-barriers";
@@ -74,8 +82,11 @@ export interface ProviderTerminalPluginHost extends PaneSetHost {
     redeem(id: string): Promise<{
       kind: "file" | "image";
       path: string;
-      inline?: TerminalInlineImage;
     } | null>;
+  };
+  resources?: {
+    open(resourceId: string): Promise<ReadableStream<Uint8Array> | null>;
+    release(resourceId: string): Promise<void>;
   };
   // The plugin's user settings (manifest configuration); the engine selection is read here.
   settings?: { get(key: string): unknown };
@@ -142,6 +153,7 @@ export function activateProviderTerminalPlugin(
   config: ProviderTerminalPluginConfig,
 ): void {
   const views = new Map<string, MountedView>();
+  const consumedImageResources = new Set<string>();
   const stopBarriers = paneStopBarriers(config.pluginId, document);
   if (config.engines && config.engines.sidecars[config.engineId] !== config.terminalSidecarId) {
     throw new Error(`engines.sidecars.${config.engineId} must name ${config.terminalSidecarId}, the plugin's own engine sidecar`);
@@ -339,7 +351,7 @@ export function activateProviderTerminalPlugin(
     try {
       const value = drop?.dataset.lastDrop ? JSON.parse(drop.dataset.lastDrop) : null;
       if (value && Number.isSafeInteger(value.accepted) && Number.isSafeInteger(value.refused)
-        && (value.mode === "path" || value.mode === "inline")) last = value;
+        && value.mode === "path") last = value;
     } catch { /* malformed DOM state is reported as no completed drop */ }
     return {
       ...current,
@@ -625,7 +637,7 @@ export function activateProviderTerminalPlugin(
   }, "inject");
   const handleDrop = async (params: Record<string, unknown>, context?: CommandContext) => {
     const found = target(params, context);
-    const mode = params.mode === "inline" ? "inline" : "path";
+    const mode = "path" as const;
     const tokens = Array.isArray(params.grants)
       ? params.grants.filter((value): value is string => typeof value === "string" && value !== "")
       : [];
@@ -638,40 +650,141 @@ export function activateProviderTerminalPlugin(
     }
     let accepted = 0;
     if (found?.pane.writable && redeemed.length > 0) {
-      if (mode === "path") {
-        const shell = await terminalLoginShell(host.commands);
-        await found.pane.write(`${redeemed.map((grant) => quoteTerminalDropPath(grant.path, shell)).join(" ")} `);
-        accepted = redeemed.length;
-      } else if (found.pane.presenter.presentInlineImage) {
-        for (const grant of redeemed) {
-          const image = grant.kind === "image" ? grant.inline : undefined;
-          if (!image || image.protocol === "" || image.data === "") continue;
-          if (await found.pane.presenter.presentInlineImage(image)) accepted += 1;
-        }
-      }
+      const shell = await terminalLoginShell(host.commands);
+      await found.pane.write(`${redeemed.map((grant) => quoteTerminalDropPath(grant.path, shell)).join(" ")} `);
+      accepted = redeemed.length;
     }
-    const result = { pane: found?.pane.key ?? null, accepted, mode };
+    const result = { pane: found?.pane.key ?? null, accepted, refused: tokens.length - accepted, mode };
     const drop = found?.pane.root.querySelector<HTMLElement>('[data-node^="terminal-drop-target"]');
     if (drop) drop.dataset.lastDrop = JSON.stringify({ accepted, refused: tokens.length - accepted, mode });
     found?.pane.root.dispatchEvent(new CustomEvent(
       accepted > 0 ? "soksak:terminal-drop-accepted" : "soksak:terminal-drop-refused",
-      { bubbles: true, detail: { ...result, refused: tokens.length - accepted } },
+      { bubbles: true, detail: result },
     ));
     return result;
   };
   register("drop", scoped({
     grants: { type: "array", required: true, description: { en: "Opaque host-issued file grants", ko: "host가 발급한 불투명 file grant" } },
-    mode: { type: "string", enum: ["path", "inline"], description: { en: "Path input or declared inline image", ko: "path 입력 또는 선언된 inline image" } },
   }), handleDrop, "inject");
   const dropped = host.events?.on("paths.dropped", (payload) => {
     if (!payload.paneId || payload.grants.length === 0) return;
     void handleDrop({
       view: payload.paneId,
       grants: payload.grants.map((grant) => grant.id),
-      mode: "path",
     }).catch(() => {});
   });
   if (dropped) subscriptions.push(dropped);
+  const refusal = (
+    found: Target | undefined,
+    resourceId: string,
+    code: TerminalInlineImageRefusal["code"],
+    message: string,
+  ): TerminalImagePresentResult => ({
+    pane: found?.pane.key ?? null,
+    resourceId,
+    presented: false,
+    protocol: null,
+    refusal: { resourceId, code, message },
+  });
+  const publishImageResult = (
+    found: Target | undefined,
+    resource: TerminalImageResource,
+    result: TerminalImagePresentResult,
+  ): TerminalImagePresentResult => {
+    if (found) {
+      if (result.refusal) found.pane.root.dataset.inlineImageRefusal = JSON.stringify(result.refusal);
+      else delete found.pane.root.dataset.inlineImageRefusal;
+      found.pane.status.refresh();
+      found.pane.root.dispatchEvent(new CustomEvent(
+        result.presented ? TERMINAL_INLINE_IMAGE_EVENTS.presented : TERMINAL_INLINE_IMAGE_EVENTS.refused,
+        {
+          bubbles: true,
+          detail: result.presented
+            ? {
+                pane: found.pane.key, resourceId: resource.resourceId,
+                protocol: result.protocol, mime: resource.mime, sizeBytes: resource.sizeBytes,
+              }
+            : { pane: found.pane.key, resourceId: resource.resourceId, refusal: result.refusal },
+        },
+      ));
+    }
+    return result;
+  };
+  register("image.present", scoped({
+    resource: { type: "object", required: true, description: { en: "Authorized opaque image resource", ko: "허용된 불투명 이미지 리소스" } },
+    protocol: { type: "string", description: { en: "Requested terminal image protocol", ko: "요청할 터미널 이미지 프로토콜" } },
+  }), async (params, context) => {
+    const resourceErrors = validateTerminalImageResource(params.resource);
+    if (resourceErrors.length > 0) throw new Error(`invalid terminal image resource: ${resourceErrors.join("; ")}`);
+    const resource = params.resource as TerminalImageResource;
+    const found = target(params, context);
+    if (consumedImageResources.has(resource.resourceId)) {
+      return publishImageResult(found, resource, refusal(
+        found, resource.resourceId, "resource-unavailable", "image resource was already consumed",
+      ));
+    }
+    consumedImageResources.add(resource.resourceId);
+    let result: TerminalImagePresentResult;
+    try {
+      if (!found) {
+        result = refusal(found, resource.resourceId, "resource-unavailable", "target pane is unavailable");
+      } else {
+        const imageStatus = found.pane.presenter.inlineImageStatus?.() ?? {
+          inlineImageProtocols: [], inlineImageLimits: {}, inlineImageRefusal: null,
+        };
+        const statusErrors = validateTerminalInlineImageStatus(imageStatus);
+        if (statusErrors.length > 0) {
+          result = refusal(found, resource.resourceId, "unsupported-engine", `engine image status is invalid: ${statusErrors.join("; ")}`);
+        } else {
+          const requested = params.protocol;
+          const knownRequest = requested === undefined || (
+            typeof requested === "string"
+            && TERMINAL_INLINE_IMAGE_PROTOCOLS.includes(requested as TerminalInlineImageProtocol)
+          );
+          const protocol = knownRequest
+            ? (requested as TerminalInlineImageProtocol | undefined) ?? imageStatus.inlineImageProtocols[0]
+            : undefined;
+          if (!found.pane.presenter.presentInlineImage || imageStatus.inlineImageProtocols.length === 0) {
+            result = refusal(found, resource.resourceId, "unsupported-engine", "engine declares no inline image protocol");
+          } else if (!protocol || !imageStatus.inlineImageProtocols.includes(protocol)) {
+            result = refusal(found, resource.resourceId, "unsupported-protocol", "requested inline image protocol is unavailable");
+          } else {
+            const limits = imageStatus.inlineImageLimits[protocol];
+            if (!limits) {
+              result = refusal(found, resource.resourceId, "unsupported-engine", "engine omitted limits for the selected protocol");
+            } else if (!limits.supportedMimeTypes.includes(resource.mime)) {
+              result = refusal(found, resource.resourceId, "unsupported-mime", "image MIME is not supported by the selected protocol");
+            } else if (resource.sizeBytes > limits.maxBytes) {
+              result = refusal(found, resource.resourceId, "resource-too-large", "image exceeds the selected protocol byte limit");
+            } else if (resource.lifetime.expiresAtUnixMs <= Date.now()) {
+              result = refusal(found, resource.resourceId, "resource-expired", "image resource lease has expired");
+            } else if (!host.resources) {
+              result = refusal(found, resource.resourceId, "resource-unavailable", "host resource delivery is unavailable");
+            } else {
+              let stream: ReadableStream<Uint8Array> | null;
+              try { stream = await host.resources.open(resource.resourceId); }
+              catch { stream = null; }
+              if (!stream) {
+                result = refusal(found, resource.resourceId, "resource-unavailable", "image resource cannot be opened");
+              } else {
+                try {
+                  const presented = await found.pane.presenter.presentInlineImage({ resource, protocol, stream });
+                  result = presented
+                    ? { pane: found.pane.key, resourceId: resource.resourceId, presented: true, protocol, refusal: null }
+                    : refusal(found, resource.resourceId, "presentation-failed", "engine refused image presentation");
+                } catch {
+                  result = refusal(found, resource.resourceId, "presentation-failed", "engine image presentation failed");
+                }
+              }
+            }
+          }
+        }
+      }
+    } finally {
+      await host.resources?.release(resource.resourceId);
+    }
+    return publishImageResult(found, resource, result!);
+  });
   register("input.compose", scoped({
     updates: { type: "array", required: true, description: { en: "Composition updates in order", ko: "순서대로의 조합 갱신" } },
     data: { type: "string", required: true, description: { en: "Committed text", ko: "확정 텍스트" } },
