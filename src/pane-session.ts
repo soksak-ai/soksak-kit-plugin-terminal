@@ -551,7 +551,10 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     // the whole box, and a renderer left at its own default fills only part of it.
     const { cols, rows } = await fitTerminalSize();
     requestedSize = { cols, rows };
-    if (!session) return;
+    if (!session) {
+      root.dispatchEvent(new CustomEvent("soksak:terminal-size", { detail: { cols, rows } }));
+      return;
+    }
     await binding.resize(session, cols, rows);
     const observed = requireReply(await binding.recoveryRequest({ op: "waitSize", pane: key, cols, rows, timeoutMs: 8000 }), "waitSize");
     if (stopped) return;

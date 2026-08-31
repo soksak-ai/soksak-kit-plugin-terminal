@@ -879,8 +879,14 @@ describe("surface delivery", () => {
     const { pane } = surfaceMount(adapter, { hostPixels: () => ({ width: 739, height: 468 }) });
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
     created().presenter.fit = vi.fn(async () => ({ cols: 94, rows: 30 }));
+    const resized = new Promise<{ cols: number; rows: number }>((resolve) => {
+      pane.root.addEventListener("soksak:terminal-size", (event) => {
+        resolve((event as CustomEvent<{ cols: number; rows: number }>).detail);
+      }, { once: true });
+    });
     pane.requestResize();
     await vi.waitFor(() => expect(pane.requestedSize).toEqual({ cols: 94, rows: 30 }));
+    await expect(resized).resolves.toEqual({ cols: 94, rows: 30 });
   });
 
   it("does not publish live or writable before the surface owner is ready", async () => {
