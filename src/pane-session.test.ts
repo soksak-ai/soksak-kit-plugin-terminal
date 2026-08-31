@@ -849,7 +849,9 @@ describe("surface delivery", () => {
   const surfaceMount = (adapter: never, extra: Partial<Parameters<typeof createPaneSession>[0]> = {}) => {
     const { binding, recovery } = fakeBinding(() => ({ ok: true, data: {} }));
     const view = mount(binding, {
-      config: { pluginId: "plugin", engineId: "vt100", renderer: adapter }, ...extra,
+      config: { pluginId: "plugin", engineId: "vt100", renderer: adapter },
+      hostPixels: () => ({ width: 640, height: 384 }),
+      ...extra,
     });
     return { ...view, binding, recovery };
   };
@@ -884,14 +886,22 @@ describe("surface delivery", () => {
   it("does not publish live or writable before the surface owner is ready", async () => {
     let release!: () => void;
     const ready = new Promise<void>((resolve) => { release = resolve; });
-    const { adapter } = surfaceAdapter(ready);
+    let applyGrid!: (grid: { cols: number; rows: number }) => void;
+    const grid = new Promise<{ cols: number; rows: number }>((resolve) => { applyGrid = resolve; });
+    const { adapter, created } = surfaceAdapter(ready);
     const { pane } = surfaceMount(adapter);
+    created().presenter.fit = vi.fn(() => grid);
     await Promise.resolve();
     expect(pane.status.current().phase).not.toBe("live");
     expect(pane.writable).toBe(false);
     release();
+    await Promise.resolve();
+    expect(pane.status.current().phase).not.toBe("live");
+    expect(pane.writable).toBe(false);
+    applyGrid({ cols: 94, rows: 30 });
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
     expect(pane.writable).toBe(true);
+    expect(pane.requestedSize).toEqual({ cols: 94, rows: 30 });
   });
 
   it("routes input through the presenter and never the pty", async () => {
@@ -917,9 +927,7 @@ describe("surface delivery", () => {
   it("publishes a surface presenter's engine-driven presentation changes", async () => {
     const published: Array<Record<string, unknown>> = [];
     const { adapter, created } = surfaceAdapter();
-    const { binding } = fakeBinding(() => ({ ok: true, data: {} }));
-    const { pane } = mount(binding, {
-      config: { pluginId: "plugin", engineId: "vt100", renderer: adapter },
+    const { pane } = surfaceMount(adapter, {
       publish: (value) => published.push(value as unknown as Record<string, unknown>),
     });
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));

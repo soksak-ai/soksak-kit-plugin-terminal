@@ -790,6 +790,10 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       root.dataset.terminalOperation = "waiting-surface-owner";
       await presenter.ready!();
       if (stopped) return;
+      requestResize();
+      await resizeWorker.settled();
+      if (stopped) return;
+      if (!requestedSize) throw new Error(`surface returned no initial grid for pane ${key}`);
       writable = true;
       root.dataset.terminalOperation = "ready";
       presentation.markReady();
