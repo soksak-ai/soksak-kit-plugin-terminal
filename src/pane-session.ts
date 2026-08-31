@@ -21,7 +21,7 @@ export interface TerminalPresenter {
   size(): { cols: number; rows: number };
   measure?(): { cols: number; rows: number };
   metrics?(): { cellWidth: number; cellHeight: number } | null;
-  fit?(): void;
+  fit?(): void | { cols: number; rows: number } | Promise<void | { cols: number; rows: number }>;
   renderFrame?(frame: ProviderFrame): void;
   applySnapshot?(snapshot: Record<string, unknown>, archived: boolean): Promise<void> | void;
   writeOutput?(bytes: Uint8Array): Promise<void>;
@@ -308,8 +308,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   if (surfaceDelivery && (!presenter.sendText || !presenter.themeStatus || !presenter.setTheme || !presenter.ready)) {
     throw new Error("surface renderer requires ready, sendText, themeStatus and setTheme contracts");
   }
-  const terminalSize = () => {
-    presenter.fit?.();
+  const currentTerminalSize = () => {
     const measured = presenter.measure?.() ?? presenter.size();
     if (measured.cols > 0 && measured
 .rows > 0) return measured;
@@ -318,6 +317,11 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       cols: Math.max(1, Math.floor(px.width / 8)),
       rows: Math.max(1, Math.floor(px.height / 16)),
     };
+  };
+  const fitTerminalSize = async () => {
+    const fitted = await presenter.fit?.();
+    if (fitted && fitted.cols > 0 && fitted.rows > 0) return fitted;
+    return currentTerminalSize();
   };
   status = createTerminalStatusController({
     root,
@@ -545,17 +549,17 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     if (px.width <= 0 || px.height <= 0) return;
     // Fitting the renderer to the pane is display, not session: a pane with no session still shows
     // the whole box, and a renderer left at its own default fills only part of it.
-    const { cols, rows } = terminalSize();
+    const { cols, rows } = await fitTerminalSize();
+    requestedSize = { cols, rows };
     if (!session) return;
     await binding.resize(session, cols, rows);
-    requestedSize = { cols, rows };
     const observed = requireReply(await binding.recoveryRequest({ op: "waitSize", pane: key, cols, rows, timeoutMs: 8000 }), "waitSize");
     if (stopped) return;
     if (!bytesDelivery && !applyFrameSnapshot(requireReply(await binding.recoveryRequest({ op: "frame", pane: key, subscriber: `${key}#${session}`, offset }), "frame"))) {
       throw new Error("resize frame is invalid");
     }
     root.dispatchEvent(new CustomEvent("soksak:terminal-size", { detail: observed }));
-    const latest = terminalSize();
+    const latest = currentTerminalSize();
     if (!stopped && (latest.cols !== cols || latest.rows !== rows)) requestResize();
   };
   const reportResizeFailure = (error: unknown) => {

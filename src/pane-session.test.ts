@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveTerminalTheme } from "@soksak/soksak-contract-plugin-terminal";
-import { createPaneSession, defaultTerminalPresenterFactory } from "./pane-session";
+import { createPaneSession, defaultTerminalPresenterFactory, type TerminalPresenter } from "./pane-session";
 import type { ProviderFrameRun, ProviderFrame } from "./provider-frame-presenter";
 import type { TerminalSessionBinding } from "./terminal-session-binding";
 import { readTerminalThemeStatus } from "./terminal-theme";
@@ -794,6 +794,7 @@ describe("surface delivery", () => {
     const presenter = {
       root,
       size: () => ({ cols: 80, rows: 24 }),
+      fit: undefined as TerminalPresenter["fit"],
       read: () => "surface",
       waitForText: async () => "surface",
       ready: () => ready,
@@ -869,6 +870,15 @@ describe("surface delivery", () => {
     expect(pane.status.current().rendererProfile).toBe("native-surface");
     expect(pane.status.current().presentation.delivery).toBe("surface");
     expect(pane.root.dataset.terminalOperation).toBe("ready");
+  });
+
+  it("records the exact size returned by an asynchronous surface fit", async () => {
+    const { adapter, created } = surfaceAdapter();
+    const { pane } = surfaceMount(adapter, { hostPixels: () => ({ width: 739, height: 468 }) });
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    created().presenter.fit = vi.fn(async () => ({ cols: 94, rows: 30 }));
+    pane.requestResize();
+    await vi.waitFor(() => expect(pane.requestedSize).toEqual({ cols: 94, rows: 30 }));
   });
 
   it("does not publish live or writable before the surface owner is ready", async () => {
