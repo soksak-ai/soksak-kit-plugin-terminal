@@ -24,6 +24,8 @@ export interface TerminalPresenter {
   fit?(): void | { cols: number; rows: number } | Promise<void | { cols: number; rows: number }>;
   renderFrame?(frame: ProviderFrame): void;
   applySnapshot?(snapshot: Record<string, unknown>, archived: boolean): Promise<void> | void;
+  /** Removes an archived paint before a new live session is presented. */
+  clear?(): Promise<void> | void;
   writeOutput?(bytes: Uint8Array): Promise<void>;
   onRendered?(callback: (durationMs: number) => void): { dispose(): void };
   // Native presenters receive engine presentation state outside this process. This subscription
@@ -828,6 +830,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     frameForced = requestInitialFrame;
     if (frameRequest !== null) clearTimeout(frameRequest);
     frameRequest = null;
+    if (restored) await presenter.clear?.();
     await startFresh({ recoveryOutcome: restored ? "archived" : undefined });
   };
   const capturePrepare = (event: Event) => {

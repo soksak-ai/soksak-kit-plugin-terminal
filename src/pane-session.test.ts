@@ -528,7 +528,9 @@ describe("a pane that is not shown", () => {
 // pane shows it and then starts a shell, so the pane can be typed into again.
 describe("a pane whose session ended", () => {
   it("shows what was archived and starts a shell", async () => {
-    const { binding, recovery } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    const { binding, recovery, emit } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab"]) } }));
+    const events: string[] = [];
+    binding.open = vi.fn(async () => { events.push("open"); return 1; });
     binding.paneAlive = vi.fn(async () => false);
     const original = binding.recoveryRequest;
     binding.recoveryRequest = vi.fn(async (request: Record<string, unknown>) => {
@@ -538,11 +540,27 @@ describe("a pane whose session ended", () => {
       }
       return original(request);
     }) as never;
-    const { pane } = mount(binding);
+    const renderer = {
+      delivery: "bytes" as const, rendererId: "archive-order",
+      create: (root: HTMLElement) => ({
+        root, read: () => "", size: () => ({ cols: 80, rows: 24 }),
+        focus: () => true, dispose: () => {}, writeOutput: async () => {},
+        applySnapshot: async (_snapshot: Record<string, unknown>, archived: boolean) => {
+          events.push(archived ? "archive" : "snapshot");
+        },
+        clear: async () => { events.push("clear"); },
+        onRendered: () => ({ dispose: () => {} }), waitForText: async () => "",
+      }),
+    };
+    const { pane } = mount(binding, { config: { pluginId: "plugin", engineId: "vt100", renderer } });
     await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
     expect(pane.status.current().recoveryOutcome).toBe("archived");
+    emit(1, new Uint8Array([1]));
+    await vi.waitFor(() => expect(pane.writable).toBe(true));
     expect(pane.writable).toBe(true);
     expect(binding.open).toHaveBeenCalled();
+    expect(events.indexOf("archive")).toBeGreaterThanOrEqual(0);
+    expect(events).toEqual(["archive", "clear", "open"]);
   });
 });
 
