@@ -979,7 +979,8 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       intrinsicVisible = next;
       const current = publishVisibility();
       if (wasEffective || !current.effectiveVisible) return;
-      if (bytesDelivery || surfaceDelivery) presenter.refresh?.();
+      if (surfaceDelivery) requestResize();
+      else if (bytesDelivery) presenter.refresh?.();
       else { frameForced = true; scheduleRenderLatest(); }
     },
     setHostPresentation(next, dim) {
@@ -992,7 +993,8 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       presentationDim = dim;
       const current = publishVisibility();
       if (wasEffective || !current.effectiveVisible) return;
-      if (bytesDelivery || surfaceDelivery) presenter.refresh?.();
+      if (surfaceDelivery) requestResize();
+      else if (bytesDelivery) presenter.refresh?.();
       else { frameForced = true; scheduleRenderLatest(); }
     },
         requestResize,

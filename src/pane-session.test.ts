@@ -1041,6 +1041,29 @@ describe("surface delivery", () => {
 });
 
 describe("visibility state and the presenter", () => {
+  it("refits a native surface when a hidden tab becomes visible", async () => {
+    const fit = vi.fn(async () => ({ cols: 80, rows: 24 }));
+    const adapter = {
+      delivery: "surface", rendererId: "vision-surface", rendererProfile: "native-surface",
+      create: (root: HTMLElement, _pane: string, _send: (text: string) => void, _options: Record<string, unknown>) => ({
+        root, size: () => ({ cols: 80, rows: 24 }), fit,
+        read: () => "", waitForText: async () => "", ready: async () => {}, focus: () => true,
+        sendText: async () => {}, themeStatus: () => readTerminalThemeStatus(document.documentElement),
+        setTheme: () => {}, setVisibility: () => {}, refresh: () => {}, dispose: () => {},
+      }),
+    } as never;
+    const { binding } = fakeBinding(() => ({ ok: true, data: {} }));
+    const { pane } = mount(binding, {
+      config: { pluginId: "plugin", engineId: "vt100", renderer: adapter },
+      hostPixels: () => ({ width: 640, height: 384 }),
+    });
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    fit.mockClear();
+    pane.setIntrinsicVisible(false);
+    pane.setIntrinsicVisible(true);
+    await vi.waitFor(() => expect(fit).toHaveBeenCalled());
+  });
+
   it("hands intrinsic pane visibility to a presenter without rewriting host visibility", async () => {
     const { binding } = fakeBinding(() => ({ ok: true, code: "OK", data: { full: true, cols: 4, rows: 1, cursor: [0, 0], cursorVisible: false, altActive: false, lines: [] } }));
     const states: Array<{ intrinsicVisible: boolean; hostVisible: boolean }> = [];
