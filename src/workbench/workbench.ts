@@ -468,6 +468,12 @@ export function createWorkbench(root: HTMLElement, paneSet: WorkbenchPaneSet, op
     element: root, resized: () => layout(true), events: options.events,
     createResizeObserver: options.createResizeObserver,
   });
+  // A restored view can be inserted after the synchronous layout while its window is occluded.
+  // WebKit may pause requestAnimationFrame in that state, and some hosts do not emit a resize
+  // record for the insertion.  The mount transaction itself is the deterministic edge: remeasure
+  // once at its microtask boundary, without a timer or polling loop.  `notified` keeps this
+  // idempotent when ResizeObserver or the frame edge also reports the same geometry.
+  queueMicrotask(() => layout(true));
   // A view can be constructed before its host slot is inserted into the document. The synchronous
   // layout above then measures a zero-sized root, and some hosts do not emit a ResizeObserver entry
   // for that initial insertion. The first animation frame is the browser's layout edge: remeasure

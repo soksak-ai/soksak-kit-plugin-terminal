@@ -105,6 +105,23 @@ describe("workbench", () => {
     }
   });
 
+  it("remeasures at the mount transaction boundary when the frame edge is unavailable", async () => {
+    let width = 0;
+    let height = 0;
+    const root = document.createElement("div");
+    Object.defineProperty(root, "clientWidth", { get: () => width });
+    Object.defineProperty(root, "clientHeight", { get: () => height });
+    document.body.append(root);
+    const { set, panes } = fakePaneSet("tab-microtask");
+    createWorkbench(root, set, {
+      viewId: "tab-microtask", createResizeObserver: () => ({ observe() {}, disconnect() {} }),
+    });
+    expect(panes.get("tab-microtask.1")!.hostPixels!()).toEqual({ width: 0, height: 0 });
+    width = 800; height = 400;
+    await Promise.resolve();
+    expect(panes.get("tab-microtask.1")!.hostPixels!()).toEqual({ width: 800, height: 400 });
+  });
+
   it("uses the displayed bounding box when WebKit reports zero client dimensions", () => {
     const root = document.createElement("div");
     Object.defineProperty(root, "clientWidth", { value: 0 });
