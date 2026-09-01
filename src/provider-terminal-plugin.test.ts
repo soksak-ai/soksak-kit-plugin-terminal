@@ -919,7 +919,9 @@ describe("provider-backed terminal plugin", () => {
     await vi.waitFor(() => expect(emit).toBeTypeOf("function")); emit!(new Uint8Array([79, 75]));
     await vi.waitFor(() => expect(root.querySelector('[data-node="terminal-screen/1"]')?.textContent).toContain("OK"));
     expect(provider.send).toHaveBeenCalledWith(expect.objectContaining({ args: { request: expect.objectContaining({
-      afterSequence: 12, pane: "pane.1", subscriber: "pane.1#4", offset: 0, timeoutMs: 2000,
+      // The attach event reports the stream's starting sequence before the first
+      // bytes arrive. The frame response advances to the exact sequence 12.
+      afterSequence: 10, pane: "pane.1", subscriber: "pane.1#4", offset: 0, timeoutMs: 2000,
     }) } }));
     const status = await commands.get("status")!({}) as Record<string, unknown>;
     expect(status).toMatchObject({

@@ -32,7 +32,11 @@ function fakeBinding(frames: () => FrameReply) {
     resize: vi.fn(async () => {}),
     close: vi.fn(async () => {}),
     detach: vi.fn(async (session: number) => { detached.push(session); }),
-    onData: (session, callback) => { readers.set(session, callback); return { dispose: () => readers.delete(session) }; },
+    onData: (session, callback) => {
+      readers.set(session, callback);
+      callback(new Uint8Array(), taken.get(session) ?? 0);
+      return { dispose: () => readers.delete(session) };
+    },
     onEnd: (session, callback) => { enders.set(session, callback); return { dispose: () => enders.delete(session) }; },
     paneAlive: vi.fn(async () => false),
     recoveryRequest: vi.fn(async (request: Record<string, unknown>) => {
@@ -78,6 +82,19 @@ function mount(binding: TerminalSessionBinding, extra: Partial<Parameters<typeof
 }
 
 describe("pane session", () => {
+  it("renders the initial frame notification when attach has no PTY bytes", async () => {
+    const { binding, recovery } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["prompt"]) } }));
+    const onData = binding.onData;
+    binding.onData = (session, callback) => {
+      const subscription = onData(session, callback);
+      callback(new Uint8Array(), 7, { initial: true });
+      return subscription;
+    };
+    const { pane } = mount(binding);
+    await vi.waitFor(() => expect(pane.presenter.read()).toBe("prompt"));
+    expect(recovery.some((request) => request.op === "frame")).toBe(true);
+  });
+
   it("keeps a fresh pane input-blocked until the first PTY output event", async () => {
     const { binding, emit } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["prompt"]) } }));
     const renderer = {

@@ -36,7 +36,7 @@ export interface TerminalSessionBinding {
   resize(session: number, cols: number, rows: number): Promise<void>;
   close(session: number): Promise<void>;
   detach(session: number): Promise<void>;
-  onData(session: number, callback: (bytes: Uint8Array, throughSeq: number) => void): { dispose(): void };
+  onData(session: number, callback: (bytes: Uint8Array, throughSeq: number, meta?: { initial?: boolean }) => void): { dispose(): void };
   onEnd(session: number, callback: (reason: string) => void): { dispose(): void };
   paneAlive(paneId: string): Promise<boolean>;
   recoveryRequest(request: Record<string, unknown>): Promise<Record<string, unknown>>;
@@ -247,6 +247,9 @@ export function createTerminalSessionBinding(
     onData(session, callback) {
       const set = readers.get(session) ?? new Set(); readers.set(session, set); set.add(callback);
       for (const item of pending.get(session) ?? []) callback(item.bytes, item.throughSeq); pending.delete(session);
+      // Attach reports the current absolute sequence even when no bytes were pending. The pane
+      // uses this event to request its first frame without a timer or a speculative write.
+      callback(new Uint8Array(), taken.get(session) ?? 0, { initial: true });
       return { dispose: () => void readers.get(session)?.delete(callback) };
     },
     onEnd(session, callback) {

@@ -190,6 +190,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   let renderedSequence: number | null = null;
   let renderingTask: Promise<void> | null = null;
   let frameForced = false;
+  let initialFramePending = false;
   let sourceGeneration = 0;
   // ReturnType<typeof setTimeout>: a consumer that type-checks this source with Node types sees Timeout, not number.
   let frameRequest: ReturnType<typeof setTimeout> | null = null;
@@ -586,19 +587,29 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       throw new Error(`pty returned no session for pane ${key}`);
     }
     session = opened;
-    output = binding.onData(session, (chunk, throughSeq) => {
-      lastOutputAt = now();
-      keepTail(chunk);
-      input.observe(chunk);
-      for (const listener of outputListeners) listener();
+    output = binding.onData(session, (chunk, throughSeq, meta) => {
+      const hasBytes = chunk.length > 0;
+      const initial = meta?.initial === true;
+      if (hasBytes) {
+        lastOutputAt = now();
+        keepTail(chunk);
+        input.observe(chunk);
+        for (const listener of outputListeners) listener();
+      }
+      // A fresh PTY at sequence zero has no frame to recover yet. The initial event
+      // is meaningful only when the binding reports output that already exists but
+      // was not pending for this subscriber.
+      if (!hasBytes && (!initial || throughSeq <= 0)) return;
       if (bytesDelivery) {
+        if (!hasBytes) return;
         pendingOutput.push(chunk.slice());
         pendingOutputSequence = Math.max(pendingOutputSequence, throughSeq);
         scheduleByteOutput();
         return;
       }
       requestedSequence = Math.max(requestedSequence, throughSeq);
-      scheduleRenderLatest();
+      if (!initial) scheduleRenderLatest();
+      else initialFramePending = true;
     });
     outputEnd = binding.onEnd(session, (reason) => {
       if (stopped || session !== opened) return;
@@ -652,6 +663,10 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       fidelity: outcome?.fidelity ?? "complete",
       failure: outcome?.failure,
     });
+    if (!bytesDelivery && initialFramePending) {
+      initialFramePending = false;
+      scheduleRenderLatest();
+    }
   };
   const startWarm = async () => {
     root.dataset.terminalOperation = "subscribing-recovery";
@@ -695,6 +710,10 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     presentation.markReady();
     status.refresh();
     status.set("live", { recoveryOutcome: "continued", fidelity: "complete" });
+    if (!bytesDelivery && initialFramePending) {
+      initialFramePending = false;
+      scheduleRenderLatest();
+    }
   };
   const startArchived = async (): Promise<boolean> => {
     root.dataset.terminalOperation = "checking-archive";

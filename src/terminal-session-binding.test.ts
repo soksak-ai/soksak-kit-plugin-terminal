@@ -240,6 +240,26 @@ describe("shared terminal session binding", () => {
     expect(received).toEqual([65, 66, 67, 68, 69]);
   });
 
+  it("notifies a new data subscriber of the current sequence when no bytes are pending", async () => {
+    const channel: TerminalSidecarChannel = {
+      send: vi.fn(async (request) => {
+        if (request.command === "pty.open") return { ok: true, result: { data: { session: 9 } } };
+        return { ok: true, result: { data: {} } };
+      }),
+      stream: vi.fn(async () => ({
+        answer: { ok: true, result: { data: { startSeq: 41 } } }, close: settledClose(),
+      })),
+    };
+    const binding = createTerminalSessionBinding({
+      windowLabel: () => "window-a", commands: { execute: async () => ({ data: { loginShell: "/bin/zsh" } }) },
+      sidecar: { open: async () => channel },
+    }, { ptySidecarId: "soksak-sidecar-pty", terminalSidecarId: "soksak-sidecar-terminal-vt100" });
+    const session = await binding.open("pane-a", 80, 24, "none");
+    const events: Array<{ bytes: number[]; throughSeq: number; initial?: boolean }> = [];
+    binding.onData(session, (bytes, throughSeq, meta) => events.push({ bytes: [...bytes], throughSeq, ...meta }));
+    expect(events).toEqual([{ bytes: [], throughSeq: 41, initial: true }]);
+  });
+
   it("closes the byte stream before explicitly detaching its renderer generation", async () => {
     const order: string[] = [];
     let settleClose!: () => void;
