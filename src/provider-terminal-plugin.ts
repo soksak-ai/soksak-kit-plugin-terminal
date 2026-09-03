@@ -59,6 +59,10 @@ export interface ProviderTerminalPluginHost extends PaneSetHost {
   };
   ui: {
     registerView(id: string, provider: {
+      // What this view needs to come back (SESSION.md S1-5). A terminal is "session": the shell
+      // keeps running with nothing drawing it, so an owner holds it and the screen is replayed
+      // from the output that owner stored.
+      restores: "none" | "view" | "session";
       mount(container: HTMLElement, context: ViewContext): void;
       unmount?(container: HTMLElement): void;
       focus?(container: HTMLElement, context: ViewContext, request: { signal: AbortSignal }): void;
@@ -255,6 +259,9 @@ export function activateProviderTerminalPlugin(
   };
 
   const provider = {
+    // The shell outlives this view, and what it printed is not derivable from anything else — so
+    // this is the one kind that needs an owner rather than a record on the view.
+    restores: "session" as const,
     mount(container: HTMLElement, context: ViewContext) {
       const viewId = context.viewId ?? "";
       if (!viewId) throw new Error("terminal view requires a view id");
