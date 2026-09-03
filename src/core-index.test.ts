@@ -11,10 +11,10 @@ describe("writing the index", () => {
   it("records the session and the view it is shown on", () => {
     const execute = vi.fn(async () => ({ ok: true }));
     coreIndex(host(execute), "an-owner").attach(7, "v1");
-    expect(execute).toHaveBeenCalledWith("session_attach", {
+    expect(execute).toHaveBeenCalledWith("session.attach", {
       session: "7",
       owner: "an-owner",
-      viewId: "v1",
+      view: "v1",
     });
   });
 
@@ -23,17 +23,17 @@ describe("writing the index", () => {
     // only to 2^53, and an id above that comes back as a different session.
     const execute = vi.fn(async () => ({ ok: true }));
     coreIndex(host(execute), "an-owner").attach(3606797633324619, "v1");
-    expect(execute).toHaveBeenCalledWith("session_attach", {
+    expect(execute).toHaveBeenCalledWith("session.attach", {
       session: "3606797633324619",
       owner: "an-owner",
-      viewId: "v1",
+      view: "v1",
     });
   });
 
   it("takes the coordinate off a session that is still running", () => {
     const execute = vi.fn(async () => ({ ok: true }));
     coreIndex(host(execute), "an-owner").detach(7);
-    expect(execute).toHaveBeenCalledWith("session_detach", { session: "7" });
+    expect(execute).toHaveBeenCalledWith("session.detach", { session: "7" });
   });
 
   it("does nothing when the host serves no index", () => {
@@ -44,6 +44,19 @@ describe("writing the index", () => {
     const execute = vi.fn(async () => ({ ok: true }));
     coreIndex(host(execute), "").attach(7, "v1");
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("reports a command the core will not serve", async () => {
+    // The runner answers rather than rejecting — every call resolves to {ok:true} or {ok:false} —
+    // so a name it does not serve looks exactly like a success to a caller that only catches.
+    // Measured: an attach under the wrong name produced no log and no entry, and this file was
+    // green over it because it asserted the payload rather than the answer.
+    const reported = vi.spyOn(console, "error").mockImplementation(() => {});
+    const execute = vi.fn(async () => ({ ok: false, code: "UNKNOWN_COMMAND", message: "no such" }));
+    coreIndex(host(execute), "an-owner").attach(7, "v1");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(reported).toHaveBeenCalled();
+    reported.mockRestore();
   });
 
   it("reports a refusal and leaves the session running", async () => {

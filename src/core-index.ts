@@ -31,19 +31,29 @@ export function coreIndex(host: ProviderTerminalPluginHost, owner: string): Core
   if (!execute || !owner) {
     return { attach: () => {}, detach: () => {} };
   }
-  const report = (what: string, error: unknown) => {
-    console.error(`terminal: the core index did not record ${what}`, error);
+  // A refused command answers rather than rejecting: the runner's contract is that every call
+  // resolves to {ok:true,…} or {ok:false,code,message}. So a name it does not serve looks exactly
+  // like a success to a caller that only catches. Measured: an attach under the wrong name and the
+  // wrong parameter produced no log and no entry, and the test that asserted the payload was green
+  // over a call that could not land.
+  const put = (command: string, params: Record<string, unknown>, what: string) => {
+    void Promise.resolve(execute(command, params))
+      .then((outcome) => {
+        if ((outcome as { ok?: unknown } | undefined)?.ok === false) {
+          console.error(`terminal: the core index refused ${what}`, outcome);
+        }
+      })
+      .catch((error) => console.error(`terminal: the core index did not record ${what}`, error));
   };
   return {
     attach(session, viewId) {
-      void Promise.resolve(
-        execute("session_attach", { session: String(session), owner, viewId }),
-      ).catch((error) => report(`session ${session} on view ${viewId}`, error));
+      // The window is not sent. The command stamps the window it ran in, which is the one this view
+      // is drawn in — a window named here would be this kit's second answer to that.
+      put("session.attach", { session: String(session), owner, view: viewId },
+        `session ${session} on view ${viewId}`);
     },
     detach(session) {
-      void Promise.resolve(execute("session_detach", { session: String(session) })).catch(
-        (error) => report(`the detach of session ${session}`, error),
-      );
+      put("session.detach", { session: String(session) }, `the detach of session ${session}`);
     },
   };
 }
