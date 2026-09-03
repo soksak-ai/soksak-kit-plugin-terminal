@@ -22,6 +22,7 @@ import type {
 import { rendererDelivery } from "./pane-session";
 import { paneStopBarriers } from "./pane-stop-barriers";
 import { createTerminalSessionBinding, type TerminalSessionBinding } from "./terminal-session-binding";
+import { coreIndex } from "./core-index";
 import { closedTerminalPresentation } from "./terminal-presentation-status";
 import { waitForTerminalConditions } from "./terminal-condition-wait";
 import { waitForTerminalSize } from "./terminal-size-wait";
@@ -276,6 +277,10 @@ export function activateProviderTerminalPlugin(
           containerGeneration: context.containerGeneration,
         },
         engineFor, stopBarriers, restore: saved ? { next: saved.next } : null,
+        // The owner is the sidecar the plugin declares as its runtime dependency and hands this kit
+        // here. Reading it from anywhere else would be a second place that has to agree with the
+        // manifest.
+        index: coreIndex(host, config.ptySidecarId),
       });
       const workbench = createWorkbench(container, set, {
         viewId, restore: context.restore?.state, restoreCwd: context.restore?.cwd ?? null, initialCwd: context.root,

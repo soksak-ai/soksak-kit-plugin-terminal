@@ -50,6 +50,8 @@ export interface PaneSetInput {
   stopBarriers?: Map<string, Promise<void>>;
   restore?: { next: number } | null;
   now?: () => number;
+  /** Where the core is told which session each pane holds. */
+  index?: import("./core-index").CoreIndex;
 }
 
 export interface PaneSet {
@@ -154,6 +156,7 @@ export function createPaneSet(host: PaneSetHost, input: PaneSetInput): PaneSet {
       key, viewId, engineId: engine.engineId, binding: engine.binding, root: request.root,
       config: input.config, nodeSuffix: suffix, cwd: request.cwd ?? null, title: request.title ?? null,
       hostPixels: request.hostPixels, readyToStart: barriers.get(key), now: input.now,
+      index: input.index,
       observe: (bytes) => { if (focusedKey === key) host.terminal?.observe?.(viewId, bytes); },
       publish: (status) => { if (focusedKey === key) mirror(status); },
     });

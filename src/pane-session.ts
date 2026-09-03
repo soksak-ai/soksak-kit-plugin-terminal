@@ -121,6 +121,9 @@ export interface PaneSessionInput {
   hostPixels?(): { width: number; height: number };
   readyToStart?: Promise<void>;
   now?: () => number;
+  /** Where the core is told which session this view holds. Absent leaves the index unwritten, which
+   *  is what a pane with no host index does. */
+  index?: import("./core-index").CoreIndex;
 }
 
 export interface PaneSession {
@@ -587,6 +590,10 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       throw new Error(`pty returned no session for pane ${key}`);
     }
     session = opened;
+    // The core's index is written here because this is the only place that has both halves: the
+    // owner issued the id and this pane knows the view it is drawn on. Nothing else can build it,
+    // and without it the session listing answers nothing about a session that is running.
+    input.index?.attach(session, input.viewId);
     output = binding.onData(session, (chunk, throughSeq, meta) => {
       const hasBytes = chunk.length > 0;
       const initial = meta?.initial === true;
@@ -765,6 +772,9 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     if (stopped || restarting) return;
     restartsWithoutProgress += 1;
     const attached = session;
+    // The old session is no longer on this view. It is not closed — a restart replaces what draws
+    // it, and the coordinate is what changes.
+    if (attached) input.index?.detach(attached);
     session = 0;
     writable = false;
     output?.dispose();
@@ -1020,6 +1030,9 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       inputListeners.clear();
       const attached = session;
       const pendingWrites = writeQueue;
+      // Nothing draws this session any more. Detach rather than close: the shell is still running,
+      // and closing it is an explicit act on the session (S7).
+      if (attached) input.index?.detach(attached);
       session = 0;
       status.close();
       presenter.dispose();
