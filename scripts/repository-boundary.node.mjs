@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,7 +19,12 @@ test("repository owns public metadata", () => {
     "git+https://github.com/soksak-ai/soksak-kit-plugin-terminal.git",
   );
   const kit = JSON.parse(readFileSync(join(root, "kit.json"), "utf8"));
-  assert.deepEqual(kit, { id: "soksak-kit-plugin-terminal", version: "0.0.107" });
+  // The id is fixed and the version is not: a literal version here is a second copy of one value,
+  // and every release then has to update a test that measures nothing about the release. What is
+  // asserted is the shape and that package.json agrees, which is the line below.
+  assert.deepEqual(Object.keys(kit).sort(), ["id", "version"]);
+  assert.equal(kit.id, "soksak-kit-plugin-terminal");
+  assert.match(kit.version, /^\d+\.\d+\.\d+$/);
   assert.equal(pkg.version, kit.version);
   assert.equal(pkg.private, false);
   assert.match(pkg.engines.node, /^\d+\.\d+\.\d+$/);
@@ -260,4 +265,24 @@ test("direct pnpm entrypoints fail closed before dependency mutation", () => {
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
+});
+
+// Every source file the package ships is declared, and the declaration is complete.
+//
+// release-files.json is the release archive's inventory: the builder packs exactly what it lists
+// and verifies the archive against it. Nothing checks it against the source, so a file added to
+// src/ and not to the list is packaged out — the build succeeds, the release verifies, and the
+// omission surfaces as a missing module in a consumer's typecheck.
+//
+// Measured 2026-09-04: src/core-index.ts was added, the kit released and published, and three
+// plugins failed to compile against it. This is what makes that a build failure here instead.
+test("release-files.json lists every source file this package ships", () => {
+  const tracked = execFileSync("git", ["ls-files", "src"], { cwd: root, encoding: "utf8" })
+    .split("\n")
+    .filter((name) => name && !name.endsWith(".test.ts"))
+    .sort();
+  const declared = JSON.parse(readFileSync(join(root, "release-files.json"), "utf8"))
+    .filter((name) => name.startsWith("src/"))
+    .sort();
+  assert.deepEqual(declared, tracked);
 });
