@@ -87,6 +87,20 @@ describe("the core index", () => {
     expect(attached).toEqual([{ session: 1, viewId: "tab-a" }]);
   });
 
+  it("records one session per pane, not one per view", async () => {
+    // A workbench view holds several panes and each has a session of its own. The index holds one
+    // attachment per session, so a view with three panes is three entries under one view id — an
+    // attach per view would leave two of the three sessions unreachable.
+    const { set, attached, paneRoot } = harness();
+    set.openPane({ key: "tab-a.1", root: paneRoot() });
+    set.openPane({ key: "tab-a.2", root: paneRoot() });
+    set.openPane({ key: "tab-a.3", root: paneRoot() });
+    await settle();
+
+    expect(attached.map((one) => one.session).sort()).toEqual([1, 2, 3]);
+    expect(new Set(attached.map((one) => one.viewId))).toEqual(new Set(["tab-a"]));
+  });
+
   it("is told the coordinate is gone when nothing draws the session any more", async () => {
     // Detached, never closed. The shell is still running and closing it is an explicit act on the
     // session (S7), so what changes is where it is shown.
