@@ -1,11 +1,18 @@
 SHELL := /bin/sh
-.PHONY: preflight guard lock prepare build verify require-tooling require-out require-registry release attest publish
+.PHONY: version preflight guard lock prepare build verify require-tooling require-out require-registry release attest publish
 SDK_VERSION := 0.0.20
 registry_flags = --@soksak:registry=$(REGISTRY) --config.minimum-release-age=0
 publish_flags = --registry "$(REGISTRY)" --@soksak:registry="$(REGISTRY)" --no-git-checks
 # OUT and REGISTRY are accepted from the make command line only ($(origin) must be "command line").
 # GNU make's own environment channels (MAKEFLAGS, GNUMAKEFLAGS, MAKEFILES, -e) are outside this
 # Makefile's control and are not refused; setting them is a deliberate act of the caller.
+# The version is one value in two files: kit.json is the component manifest and package.json is what
+# npm packs. A verify gate refuses a disagreement, so both are written by one command rather than by
+# hand twice. VERSION is a command-line input.
+version:
+	@case "$(origin VERSION)" in "command line") ;; *) echo 'VERSION must be an exact command-line input: make version VERSION=0.0.116' >&2; exit 64 ;; esac
+	@node -e 'const {writeFileSync,readFileSync}=require("fs"); const v=process.argv[1]; if(!/^\d+\.\d+\.\d+$$/.test(v)) {console.error("VERSION must be major.minor.patch"); process.exit(64);} for (const f of ["kit.json","package.json"]) { const d=JSON.parse(readFileSync(f,"utf8")); d.version=v; writeFileSync(f, JSON.stringify(d,null,2)+"\n"); } console.log("VERSION_WRITTEN "+v);' "$(VERSION)"
+
 preflight:
 	@scripts/check-build-environment.sh
 # A package that depends on @soksak/* requires REGISTRY for every install, the public registry included.
