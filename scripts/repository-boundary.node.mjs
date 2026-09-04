@@ -152,7 +152,9 @@ test("the package configures only the npm scope it consumes", () => {
 });
 
 test("Makefile requires REGISTRY on the command line because the package depends on @soksak", () => {
-  const dependency = /REGISTRY required: this package depends on @soksak\/soksak-contract-plugin-terminal/;
+  // The guard names the first @soksak dependency it finds, and which one that is changes when a
+  // dependency is added. What the guard is for is that any of them requires REGISTRY.
+  const dependency = /REGISTRY required: this package depends on @soksak\/[a-z-]+/;
   refused(run(["prepare"]), dependency);
   refused(run(["build"]), dependency);
   refused(run(["verify"]), dependency);

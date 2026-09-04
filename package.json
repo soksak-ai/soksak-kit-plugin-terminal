@@ -42,6 +42,7 @@
     "@soksak/soksak-contract-plugin-terminal": "0.0.22"
   },
   "devDependencies": {
+    "@soksak/soksak-contract-control": "0.0.1",
     "@soksak/soksak-contract-plugin-terminal": "https://github.com/soksak-ai/soksak-contract-plugin-terminal/releases/download/v0.0.22/soksak-contract-plugin-terminal-0.0.22-any.tgz",
     "esbuild": "0.28.2",
     "jsdom": "30.0.1",
