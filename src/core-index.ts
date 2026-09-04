@@ -43,7 +43,6 @@ export function coreIndex(host: ProviderTerminalPluginHost, owner: string): Core
   // wrong parameter produced no log and no entry, and the test that asserted the payload was green
   // over a call that could not land.
   const put = (command: string, params: Record<string, unknown>, what: string) => {
-    console.error(`terminal: core index ${command} for ${what}`);
     void Promise.resolve(execute(command, params))
       .then((outcome) => {
         if ((outcome as { ok?: unknown } | undefined)?.ok === false) {
