@@ -596,7 +596,16 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     // The core's index is written here because this is the only place that has both halves: the
     // owner issued the id and this pane knows the view it is drawn on. Nothing else can build it,
     // and without it the session listing answers nothing about a session that is running.
-    input.index.attach(session, input.viewId);
+    //
+    // A failure here does not stop the pane. The index is a note about a session; the session is
+    // the work, and a terminal that refused to deliver output because a note failed would trade the
+    // work for the note. Reported rather than swallowed: this call failing silently is what kept
+    // the index empty through four wrong diagnoses (AGENTS 3-3a).
+    try {
+      input.index.attach(session, input.viewId);
+    } catch (error) {
+      console.error(`terminal: pane ${key} did not record session ${session}`, error);
+    }
     output = binding.onData(session, (chunk, throughSeq, meta) => {
       const hasBytes = chunk.length > 0;
       const initial = meta?.initial === true;
@@ -777,7 +786,13 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     const attached = session;
     // The old session is no longer on this view. It is not closed — a restart replaces what draws
     // it, and the coordinate is what changes.
-    if (attached) input.index.detach(attached);
+    if (attached) {
+      try {
+        input.index.detach(attached);
+      } catch (error) {
+        console.error(`terminal: pane ${key} did not release session ${attached}`, error);
+      }
+    }
     session = 0;
     writable = false;
     output?.dispose();
@@ -1035,7 +1050,13 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       const pendingWrites = writeQueue;
       // Nothing draws this session any more. Detach rather than close: the shell is still running,
       // and closing it is an explicit act on the session (S7).
-      if (attached) input.index.detach(attached);
+      if (attached) {
+        try {
+          input.index.detach(attached);
+        } catch (error) {
+          console.error(`terminal: pane ${key} did not release session ${attached}`, error);
+        }
+      }
       session = 0;
       status.close();
       presenter.dispose();

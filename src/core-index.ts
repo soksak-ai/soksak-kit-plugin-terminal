@@ -27,26 +27,28 @@ export interface CoreIndex {
  *  note.
  */
 export function coreIndex(host: ProviderTerminalPluginHost, owner: string): CoreIndex {
-  const execute = host.commands?.execute;
-  if (!execute || !owner) {
-    // Nothing to write to, or nothing to write about. Reported at each use rather than once: this
-    // writer is held for the life of a pane, and one line at construction is scrolled away long
-    // before anyone asks why the index is empty (AGENTS 3-3a).
-    const absent = `commands.execute ${execute ? "present" : "absent"}, owner ${owner || "empty"}`;
-    return {
-      attach: (session, viewId) =>
-        console.error(`terminal: no core index for session ${session} on view ${viewId} — ${absent}`),
-      detach: (session) =>
-        console.error(`terminal: no core index for the detach of session ${session} — ${absent}`),
-    };
-  }
-  // A refused command answers rather than rejecting: the runner's contract is that every call
-  // resolves to {ok:true,…} or {ok:false,code,message}. So a name it does not serve looks exactly
-  // like a success to a caller that only catches. Measured: an attach under the wrong name and the
-  // wrong parameter produced no log and no entry, and the test that asserted the payload was green
-  // over a call that could not land.
+  // The host is read at each call, never destructured once. `host.commands` is the surface the core
+  // builds for this plugin; a reference taken out of it at mount time is not the surface, and the
+  // measured result was that every object call in this kit reached the core while the one
+  // destructured call reached nothing — no entry, no refusal, no rejection.
   const put = (command: string, params: Record<string, unknown>, what: string) => {
-    void Promise.resolve(execute(command, params))
+    const commands = host.commands;
+    const execute = commands?.execute;
+    if (!execute || !owner) {
+      // Nothing to write to, or nothing to write about. Reported at each use rather than once: this
+      // writer is held for the life of a pane, and one line at construction is scrolled away long
+      // before anyone asks why the index is empty (AGENTS 3-3a).
+      console.error(
+        `terminal: no core index for ${what} — commands.execute ${execute ? "present" : "absent"}, owner ${owner || "empty"}`,
+      );
+      return;
+    }
+    // A refused command answers rather than rejecting: the runner's contract is that every call
+    // resolves to {ok:true,…} or {ok:false,code,message}. So a name it does not serve looks exactly
+    // like a success to a caller that only catches. Measured: an attach under the wrong name and the
+    // wrong parameter produced no log and no entry, and the test that asserted the payload was green
+    // over a call that could not land.
+    void Promise.resolve(execute.call(commands, command, params))
       .then((outcome) => {
         if ((outcome as { ok?: unknown } | undefined)?.ok === false) {
           console.error(`terminal: the core index refused ${what}`, outcome);

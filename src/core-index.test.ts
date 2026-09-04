@@ -8,6 +8,39 @@ const host = (execute?: unknown) =>
   ({ commands: execute ? { execute } : undefined }) as unknown as ProviderTerminalPluginHost;
 
 describe("writing the index", () => {
+  it("calls execute on the commands surface, not through a reference taken out of it", async () => {
+    // Measured in a running application: every object call in this kit reached the core and the one
+    // destructured call reached nothing — no entry, no refusal, no rejection. A surface whose
+    // execute reads its own object is enough to tell the two apart.
+    const sent: unknown[] = [];
+    const commands = {
+      name: "the surface",
+      async execute(this: { name?: string }, command: string, params: unknown) {
+        if (this?.name !== "the surface") throw new Error("execute lost its surface");
+        sent.push([command, params]);
+        return { ok: true };
+      },
+    };
+    const host = { commands } as unknown as ProviderTerminalPluginHost;
+    coreIndex(host, "an-owner").attach(7, "v1");
+    await Promise.resolve();
+    expect(sent).toEqual([["session.attach", { session: "7", owner: "an-owner", view: "v1" }]]);
+  });
+
+  it("reads the host at each call, so a surface that arrives after the writer is built is used", async () => {
+    // The writer is built when a view mounts and used when a session opens. Reading the host once at
+    // construction makes every later attach report an absent surface for the life of the pane.
+    const host = {} as { commands?: unknown } as ProviderTerminalPluginHost;
+    const index = coreIndex(host, "an-owner");
+    const execute = vi.fn(async () => ({ ok: true }));
+    (host as { commands?: unknown }).commands = { execute };
+    index.attach(7, "v1");
+    await Promise.resolve();
+    expect(execute).toHaveBeenCalledWith("session.attach", {
+      session: "7", owner: "an-owner", view: "v1",
+    });
+  });
+
   it("records the session and the view it is shown on", () => {
     const execute = vi.fn(async () => ({ ok: true }));
     coreIndex(host(execute), "an-owner").attach(7, "v1");
