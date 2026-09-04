@@ -39,6 +39,7 @@ function fakeBinding(frames: () => FrameReply) {
     },
     onEnd: (session, callback) => { enders.set(session, callback); return { dispose: () => enders.delete(session) }; },
     paneAlive: vi.fn(async () => false),
+    sessionForPane: vi.fn(async () => null),
     recordModes: vi.fn(async () => {}),
     recordedModes: vi.fn(async () => null),
     recoveryRequest: vi.fn(async (request: Record<string, unknown>) => {
@@ -78,7 +79,7 @@ function mount(binding: TerminalSessionBinding, extra: Partial<Parameters<typeof
     config: { pluginId: "plugin", engineId: "vt100" },
     // A pane always has an index writer. A fixture that does not measure it supplies one that
     // records nothing rather than omitting it — an omitted one was silently absent for a release.
-    index: { attach: () => {}, detach: () => {} },
+    index: { attach: () => true, detach: () => true },
     observe: (bytes) => observed.push(bytes), publish: () => {},
     ...extra,
   });
@@ -896,6 +897,28 @@ describe("surface delivery", () => {
     return { ...view, binding, recovery };
   };
 
+  it("writes the core index with the session its owner runs for the pane", async () => {
+    // A surface pane opens no session, so the id never arrives from an open call and the index was
+    // empty for every terminal in a running application. The owner stamps the pane on each session
+    // it holds, so the id is asked for.
+    const attached: Array<{ session: number; viewId: string }> = [];
+    const { adapter } = surfaceAdapter();
+    const { pane, binding } = surfaceMount(adapter, {
+      index: { attach: (session, viewId) => { attached.push({ session, viewId }); return true; }, detach: () => true },
+    });
+    binding.sessionForPane = vi.fn(async () => 101365020324163);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    expect(attached).toEqual([{ session: 101365020324163, viewId: pane.viewId }]);
+    expect(pane.root.dataset.terminalIndex).toBe("written");
+  });
+
+  it("marks the pane absent when the owner runs no session for it", async () => {
+    const { adapter } = surfaceAdapter();
+    const { pane } = surfaceMount(adapter);
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    expect(pane.root.dataset.terminalIndex).toBe("absent");
+  });
+
   it("gives the surface owner the pane's declared initial cwd", () => {
     const { adapter, options } = surfaceAdapter();
     surfaceMount(adapter, { cwd: "/workspace/project" });
@@ -1029,7 +1052,7 @@ describe("surface delivery", () => {
     expect(() => createPaneSession({
       key: "tab-a.2", viewId: "tab-a", engineId: "vt100",
       binding: fakeBinding(() => ({ ok: true })).binding, root, nodeSuffix: "2",
-      index: { attach: () => {}, detach: () => {} },
+      index: { attach: () => true, detach: () => true },
       config: { pluginId: "plugin", engineId: "vt100", renderer: broken },
       observe: () => {}, publish: () => {},
     })).toThrow(/sendText/);

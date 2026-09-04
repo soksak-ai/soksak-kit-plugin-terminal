@@ -601,9 +601,14 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     // the work, and a terminal that refused to deliver output because a note failed would trade the
     // work for the note. Reported rather than swallowed: this call failing silently is what kept
     // the index empty through four wrong diagnoses (AGENTS 3-3a).
+    //
+    // The outcome is published on the pane. A running application offers no console, so an index
+    // write that fails only into one is a failure nobody can read — which is what made this take
+    // four wrong diagnoses. `ui.expect` reads this attribute by selector.
     try {
-      input.index.attach(session, input.viewId);
+      root.dataset.terminalIndex = input.index.attach(session, input.viewId) ? "written" : "absent";
     } catch (error) {
+      root.dataset.terminalIndex = "failed";
       console.error(`terminal: pane ${key} did not record session ${session}`, error);
     }
     output = binding.onData(session, (chunk, throughSeq, meta) => {
@@ -788,8 +793,9 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
     // it, and the coordinate is what changes.
     if (attached) {
       try {
-        input.index.detach(attached);
+        root.dataset.terminalIndex = input.index.detach(attached) ? "released" : "absent";
       } catch (error) {
+        root.dataset.terminalIndex = "failed";
         console.error(`terminal: pane ${key} did not release session ${attached}`, error);
       }
     }
@@ -834,6 +840,27 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
         if (!stopped && status.current().phase !== "live") restartSession();
       });
   };
+  const indexSurfaceSession = async () => {
+    let found: number | null = null;
+    try {
+      found = await binding.sessionForPane(key);
+    } catch (error) {
+      root.dataset.terminalIndex = "failed";
+      console.error(`terminal: pane ${key} could not ask its owner for a session`, error);
+      return;
+    }
+    if (found === null) {
+      root.dataset.terminalIndex = "absent";
+      return;
+    }
+    session = found;
+    try {
+      root.dataset.terminalIndex = input.index.attach(found, input.viewId) ? "written" : "absent";
+    } catch (error) {
+      root.dataset.terminalIndex = "failed";
+      console.error(`terminal: pane ${key} did not record session ${found}`, error);
+    }
+  };
   const start = async () => {
     if (surfaceDelivery) {
       // The surface owner runs the session. Mounting a declaration is not readiness: an older
@@ -847,6 +874,10 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       if (stopped) return;
       if (!requestedSize) throw new Error(`surface returned no initial grid for pane ${key}`);
       writable = true;
+      // The surface owner opened the session, so this pane has no id from an open call. The core's
+      // index still needs one — a session nothing indexed answers nothing in a listing (SESSION.md
+      // S1-2) — and the owner already stamps the pane on every session it holds.
+      await indexSurfaceSession();
       root.dataset.terminalOperation = "ready";
       presentation.markReady();
       status.refresh();
@@ -1052,8 +1083,9 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       // and closing it is an explicit act on the session (S7).
       if (attached) {
         try {
-          input.index.detach(attached);
+          root.dataset.terminalIndex = input.index.detach(attached) ? "released" : "absent";
         } catch (error) {
+          root.dataset.terminalIndex = "failed";
           console.error(`terminal: pane ${key} did not release session ${attached}`, error);
         }
       }
@@ -1062,7 +1094,13 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       presenter.dispose();
       stopping = (async () => {
         await pendingWrites;
-        if (attached) await (intent === "close" ? binding.close(attached) : binding.detach(attached));
+        // A surface pane did not open its session and does not end it. It holds the id only to
+        // write and release the core's index; ending the session is the owner's, reached through
+        // session.close. A pane that closed it here would end a shell the surface owner is still
+        // rendering for another view.
+        if (attached) {
+          await (intent === "close" && !surfaceDelivery ? binding.close(attached) : binding.detach(attached));
+        }
         await startTask.catch(() => {});
       })();
       return stopping;

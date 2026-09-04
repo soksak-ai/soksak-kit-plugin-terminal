@@ -14,10 +14,14 @@ import type { ProviderTerminalPluginHost } from "./provider-terminal-plugin";
  *  it; sending it as a number puts it through a JSON parser that is exact only to 2^53. */
 
 export interface CoreIndex {
-  /** Records that this view holds this session. Repeating it moves the coordinate. */
-  attach(session: number, viewId: string): void;
+  /** Records that this view holds this session. Repeating it moves the coordinate.
+   *
+   *  Returns whether the command was dispatched. False means the host serves no index or the
+   *  manifest names no owner, and the caller publishes that on the pane where it is readable. The
+   *  core's answer arrives later and is reported by this writer, not returned here. */
+  attach(session: number, viewId: string): boolean;
   /** Takes the coordinate off a session that is still running. The session stays in the index. */
-  detach(session: number): void;
+  detach(session: number): boolean;
 }
 
 /** The index writer for one plugin, or one that does nothing when the host serves no index.
@@ -31,7 +35,7 @@ export function coreIndex(host: ProviderTerminalPluginHost, owner: string): Core
   // builds for this plugin; a reference taken out of it at mount time is not the surface, and the
   // measured result was that every object call in this kit reached the core while the one
   // destructured call reached nothing — no entry, no refusal, no rejection.
-  const put = (command: string, params: Record<string, unknown>, what: string) => {
+  const put = (command: string, params: Record<string, unknown>, what: string): boolean => {
     const commands = host.commands;
     const execute = commands?.execute;
     if (!execute || !owner) {
@@ -41,7 +45,7 @@ export function coreIndex(host: ProviderTerminalPluginHost, owner: string): Core
       console.error(
         `terminal: no core index for ${what} — commands.execute ${execute ? "present" : "absent"}, owner ${owner || "empty"}`,
       );
-      return;
+      return false;
     }
     // A refused command answers rather than rejecting: the runner's contract is that every call
     // resolves to {ok:true,…} or {ok:false,code,message}. So a name it does not serve looks exactly
@@ -55,16 +59,17 @@ export function coreIndex(host: ProviderTerminalPluginHost, owner: string): Core
         }
       })
       .catch((error) => console.error(`terminal: the core index did not record ${what}`, error));
+    return true;
   };
   return {
     attach(session, viewId) {
       // The window is not sent. The command stamps the window it ran in, which is the one this view
       // is drawn in — a window named here would be this kit's second answer to that.
-      put("session.attach", { session: String(session), owner, view: viewId },
+      return put("session.attach", { session: String(session), owner, view: viewId },
         `session ${session} on view ${viewId}`);
     },
     detach(session) {
-      put("session.detach", { session: String(session) }, `the detach of session ${session}`);
+      return put("session.detach", { session: String(session) }, `the detach of session ${session}`);
     },
   };
 }

@@ -44,8 +44,8 @@ function harness() {
   const attached: Array<{ session: number; viewId: string }> = [];
   const detached: number[] = [];
   const index: CoreIndex = {
-    attach: (session, viewId) => attached.push({ session, viewId }),
-    detach: (session) => detached.push(session),
+    attach: (session, viewId) => { attached.push({ session, viewId }); return true; },
+    detach: (session) => { detached.push(session); return true; },
   };
 
   const container = document.createElement("div");

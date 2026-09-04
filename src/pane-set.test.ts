@@ -32,6 +32,7 @@ function fakeBinding() {
     onData: (session, callback) => { readers.set(session, callback); return { dispose: () => readers.delete(session) }; },
     onEnd: () => ({ dispose() {} }),
     paneAlive: vi.fn(async () => false),
+    sessionForPane: vi.fn(async () => null),
     recordModes: vi.fn(async () => {}),
     recordedModes: vi.fn(async () => null),
     recoveryRequest: vi.fn(async (request: Record<string, unknown>) => {
@@ -81,7 +82,7 @@ function setup(
     context: { setRestoreState: (state) => states.push(state), setTitle: (title) => titles.push(title) },
     config: { pluginId: "plugin", engineId: "vt100", label: { en: "Terminal", ko: "터미널" } },
     engineFor: (engineId) => { engines.push(engineId ?? ""); return { engineId: engineId ?? "vt100", binding }; },
-    index: { attach: () => {}, detach: () => {} },
+    index: { attach: () => true, detach: () => true },
     stopBarriers,
     restore,
   });

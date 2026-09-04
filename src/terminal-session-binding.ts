@@ -39,6 +39,13 @@ export interface TerminalSessionBinding {
   onData(session: number, callback: (bytes: Uint8Array, throughSeq: number, meta?: { initial?: boolean }) => void): { dispose(): void };
   onEnd(session: number, callback: (reason: string) => void): { dispose(): void };
   paneAlive(paneId: string): Promise<boolean>;
+  /** The session the owner runs for this pane, or null when it runs none.
+   *
+   *  A surface-delivered pane does not open its own session — the surface owner does — so the view
+   *  never learns the id from an open call and the core's index stays empty for it (SESSION.md
+   *  S1-2). The owner already stamps the pane on every session it holds, so the id is asked for
+   *  rather than reported. */
+  sessionForPane(paneId: string): Promise<number | null>;
   /** Records the mode state a replay cannot rebuild. */
   recordModes(session: number, report: Uint8Array): Promise<void>;
   /** Reads back what was recorded, or null when nothing was. */
@@ -263,6 +270,18 @@ export function createTerminalSessionBinding(
       return { dispose: () => void enders.get(session)?.delete(callback) };
     },
     async paneAlive(paneId) { const channel = await pty(); return answer(await sendPty(channel, request("pty.pane", { paneId }))).held === true; },
+    async sessionForPane(paneId) {
+      const channel = await pty();
+      const sessions = answer(await sendPty(channel, request("pty.status", {}))).sessions;
+      if (!Array.isArray(sessions)) return null;
+      for (const entry of sessions) {
+        const held = entry as { paneId?: unknown; session?: unknown };
+        if (held.paneId !== paneId) continue;
+        const session = Number(held.session);
+        return Number.isSafeInteger(session) && session > 0 ? session : null;
+      }
+      return null;
+    },
     // The modes a program set are not in the stored output: a rotation drops the half that set
     // them, and a replay into a fresh mirror then draws in the wrong mode. The owner records them
     // as a fact of its own and answers them back before a replay (SESSION.md S4-5).
