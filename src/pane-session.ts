@@ -206,6 +206,12 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
   let pendingOutputSequence = 0;
   let writable = false;
   let requestedSize: { cols: number; rows: number } | null = null;
+  // The grid the owner has answered for. A resize asks the owner to observe a grid and waits for it;
+  // asking again for the grid it already observed is a second answer to a settled question, and the
+  // wait fails when the pane is not being drawn. Measured 2026-09-04: opening the program menu parks
+  // the pane's surface, and the resize on the way back reported
+  // RESIZE_FAILED waitSize (TIMEOUT) with the pane's geometry unchanged throughout.
+  let observedSize: { cols: number; rows: number } | null = null;
   let startTask = Promise.resolve();
   let writeQueue = Promise.resolve();
   let stopping: Promise<void> | null = null;
@@ -564,12 +570,17 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       root.dispatchEvent(new CustomEvent("soksak:terminal-size", { detail: { cols, rows } }));
       return;
     }
+    if (observedSize && observedSize.cols === cols && observedSize.rows === rows) {
+      root.dispatchEvent(new CustomEvent("soksak:terminal-size", { detail: { cols, rows } }));
+      return;
+    }
     await binding.resize(session, cols, rows);
     const observed = requireReply(await binding.recoveryRequest({ op: "waitSize", pane: key, cols, rows, timeoutMs: 8000 }), "waitSize");
     if (stopped) return;
     if (!bytesDelivery && !applyFrameSnapshot(requireReply(await binding.recoveryRequest({ op: "frame", pane: key, subscriber: `${key}#${session}`, offset }), "frame"))) {
       throw new Error("resize frame is invalid");
     }
+    observedSize = { cols, rows };
     root.dispatchEvent(new CustomEvent("soksak:terminal-size", { detail: observed }));
     const latest = currentTerminalSize();
     if (!stopped && (latest.cols !== cols || latest.rows !== rows)) requestResize();
@@ -593,6 +604,8 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
       throw new Error(`pty returned no session for pane ${key}`);
     }
     session = opened;
+    // A new session has answered for no grid. The previous session's answer says nothing about it.
+    observedSize = null;
     // The core's index is written here because this is the only place that has both halves: the
     // owner issued the id and this pane knows the view it is drawn on. Nothing else can build it,
     // and without it the session listing answers nothing about a session that is running.
@@ -1090,6 +1103,7 @@ export function createPaneSession(input: PaneSessionInput): PaneSession {
         }
       }
       session = 0;
+      observedSize = null;
       status.close();
       presenter.dispose();
       stopping = (async () => {

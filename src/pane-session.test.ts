@@ -141,6 +141,28 @@ describe("pane session", () => {
     expect(pane.renderedOutputSequence).toBe(4);
   });
 
+  // Asking the owner to observe a grid it already observed is a second answer to a settled question,
+  // and the wait for it fails while the pane is not being drawn. Measured 2026-09-04: opening the
+  // program menu parks the pane's surface and the resize on the way back reported RESIZE_FAILED
+  // waitSize (TIMEOUT) with the pane's geometry unchanged throughout.
+  it("asks the owner once for one grid, however many resizes are requested", async () => {
+    const { binding, recovery } = fakeBinding(() => ({ ok: true, data: { outputSequence: 0, ...frameOf(["ab", "cd"]) } }));
+    const { pane } = mount(binding, { hostPixels: () => ({ width: 400, height: 200 }) });
+    await vi.waitFor(() => expect(pane.status.current().phase).toBe("live"));
+    pane.requestResize();
+    await vi.waitFor(() => expect(recovery.filter((request) => request.op === "waitSize")).toHaveLength(1));
+
+    // The pane still answers its size to the renderer; what it does not do is ask the owner again.
+    const sizes: Array<{ cols: number; rows: number }> = [];
+    pane.root.addEventListener("soksak:terminal-size", (event) => {
+      sizes.push((event as CustomEvent<{ cols: number; rows: number }>).detail);
+    });
+    pane.requestResize();
+    await vi.waitFor(() => expect(sizes.length).toBeGreaterThan(0));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(recovery.filter((request) => request.op === "waitSize")).toHaveLength(1);
+  });
+
   // Every frame request names the subscriber whose baseline it advances. A request without one is
   // refused, and the pane that made it stays blocked with nothing on screen.
   it("names the subscriber on the frame it asks for after a resize", async () => {
