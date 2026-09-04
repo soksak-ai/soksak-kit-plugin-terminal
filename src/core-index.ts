@@ -42,9 +42,9 @@ export function coreIndex(host: ProviderTerminalPluginHost, owner: string): Core
   // like a success to a caller that only catches. Measured: an attach under the wrong name and the
   // wrong parameter produced no log and no entry, and the test that asserted the payload was green
   // over a call that could not land.
-  void execute("notify.show", { message: `PROBE coreIndex built owner=${owner}` });
+  void execute("probe.coreindex.built", {});
   const put = (command: string, params: Record<string, unknown>, what: string) => {
-    void execute("notify.show", { message: `PROBE put ${command} ${what}` });
+    void execute("probe.put.called", {});
     void Promise.resolve(execute(command, params))
       .then((outcome) => {
         if ((outcome as { ok?: unknown } | undefined)?.ok === false) {
