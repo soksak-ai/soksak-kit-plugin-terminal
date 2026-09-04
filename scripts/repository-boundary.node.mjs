@@ -286,3 +286,18 @@ test("release-files.json lists every source file this package ships", () => {
     .sort();
   assert.deepEqual(declared, tracked);
 });
+
+// No diagnostic call reaches a release.
+//
+// A probe added to find a defect is published unless something removes it. This kit published four
+// versions carrying one (0.0.110 through 0.0.113), because the release process has no opinion about
+// a command name that exists only to be observed.
+//
+// A command whose name begins with "probe." is that shape. It is refused here rather than in review.
+test("no source file calls a probe command", () => {
+  const offenders = execFileSync("git", ["ls-files", "src"], { cwd: root, encoding: "utf8" })
+    .split("\n")
+    .filter((name) => name && !name.endsWith(".test.ts"))
+    .filter((name) => /["'`]probe\./.test(readFileSync(join(root, name), "utf8")));
+  assert.deepEqual(offenders, [], "remove the diagnostic call before releasing");
+});
