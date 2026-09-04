@@ -39,6 +39,8 @@ function fakeBinding(frames: () => FrameReply) {
     },
     onEnd: (session, callback) => { enders.set(session, callback); return { dispose: () => enders.delete(session) }; },
     paneAlive: vi.fn(async () => false),
+    recordModes: vi.fn(async () => {}),
+    recordedModes: vi.fn(async () => null),
     recoveryRequest: vi.fn(async (request: Record<string, unknown>) => {
       recovery.push(request);
       switch (request.op) {

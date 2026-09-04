@@ -32,6 +32,8 @@ function fakeBinding() {
     onData: (session, callback) => { readers.set(session, callback); return { dispose: () => readers.delete(session) }; },
     onEnd: () => ({ dispose() {} }),
     paneAlive: vi.fn(async () => false),
+    recordModes: vi.fn(async () => {}),
+    recordedModes: vi.fn(async () => null),
     recoveryRequest: vi.fn(async (request: Record<string, unknown>) => {
       switch (request.op) {
         case "prepareSession": return { ok: true, code: "OK", data: { observerToken: "observer" } };

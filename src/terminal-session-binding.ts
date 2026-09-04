@@ -39,6 +39,10 @@ export interface TerminalSessionBinding {
   onData(session: number, callback: (bytes: Uint8Array, throughSeq: number, meta?: { initial?: boolean }) => void): { dispose(): void };
   onEnd(session: number, callback: (reason: string) => void): { dispose(): void };
   paneAlive(paneId: string): Promise<boolean>;
+  /** Records the mode state a replay cannot rebuild. */
+  recordModes(session: number, report: Uint8Array): Promise<void>;
+  /** Reads back what was recorded, or null when nothing was. */
+  recordedModes(session: number): Promise<Uint8Array | null>;
   recoveryRequest(request: Record<string, unknown>): Promise<Record<string, unknown>>;
   diagnostics(): Promise<{ pty: Record<string, unknown>; recovery: Record<string, unknown> }>;
   closeWindow(windowLabel: string): Promise<void>;
@@ -259,6 +263,22 @@ export function createTerminalSessionBinding(
       return { dispose: () => void enders.get(session)?.delete(callback) };
     },
     async paneAlive(paneId) { const channel = await pty(); return answer(await sendPty(channel, request("pty.pane", { paneId }))).held === true; },
+    // The modes a program set are not in the stored output: a rotation drops the half that set
+    // them, and a replay into a fresh mirror then draws in the wrong mode. The owner records them
+    // as a fact of its own and answers them back before a replay (SESSION.md S4-5).
+    //
+    // Bytes on the wire, in the encoding the terminal contract defines. This kit does not read
+    // them: what they mean is the mirror's.
+    async recordModes(session, report) {
+      const channel = await pty();
+      await sendPty(channel, request("pty.modes", { session, report: [...report] }));
+    },
+    async recordedModes(session) {
+      const channel = await pty();
+      const recorded = answer(await sendPty(channel, request("pty.modes", { session })));
+      const report = (recorded as { report?: unknown }).report;
+      return Array.isArray(report) ? new Uint8Array(report) : null;
+    },
     async recoveryRequest(value) {
       const operation = typeof value.op === "string" ? value.op : "";
       const commands: Record<string, string> = {
