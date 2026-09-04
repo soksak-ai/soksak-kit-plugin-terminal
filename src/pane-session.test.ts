@@ -76,6 +76,9 @@ function mount(binding: TerminalSessionBinding, extra: Partial<Parameters<typeof
   const pane = createPaneSession({
     key: "tab-a.2", viewId: "tab-a", engineId: "vt100", binding, root, nodeSuffix: "2",
     config: { pluginId: "plugin", engineId: "vt100" },
+    // A pane always has an index writer. A fixture that does not measure it supplies one that
+    // records nothing rather than omitting it — an omitted one was silently absent for a release.
+    index: { attach: () => {}, detach: () => {} },
     observe: (bytes) => observed.push(bytes), publish: () => {},
     ...extra,
   });
@@ -1026,6 +1029,7 @@ describe("surface delivery", () => {
     expect(() => createPaneSession({
       key: "tab-a.2", viewId: "tab-a", engineId: "vt100",
       binding: fakeBinding(() => ({ ok: true })).binding, root, nodeSuffix: "2",
+      index: { attach: () => {}, detach: () => {} },
       config: { pluginId: "plugin", engineId: "vt100", renderer: broken },
       observe: () => {}, publish: () => {},
     })).toThrow(/sendText/);

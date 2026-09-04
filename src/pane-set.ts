@@ -50,8 +50,9 @@ export interface PaneSetInput {
   stopBarriers?: Map<string, Promise<void>>;
   restore?: { next: number } | null;
   now?: () => number;
-  /** Where the core is told which session each pane holds. */
-  index?: import("./core-index").CoreIndex;
+  /** Where the core is told which session each pane holds. Required: an optional one is silently
+   *  absent (AGENTS 3-3a). */
+  index: import("./core-index").CoreIndex;
 }
 
 export interface PaneSet {

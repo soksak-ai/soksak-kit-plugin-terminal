@@ -29,13 +29,16 @@ export interface CoreIndex {
 export function coreIndex(host: ProviderTerminalPluginHost, owner: string): CoreIndex {
   const execute = host.commands?.execute;
   if (!execute || !owner) {
-    // Nothing to write to, or nothing to write about. Said once rather than swallowed: a plugin
-    // that reaches this is one whose sessions the core will never hear of, and a silent no-op is
-    // how that stayed invisible while every other part of the path looked correct.
-    console.error(
-      `terminal: no core index — commands.execute ${execute ? "present" : "absent"}, owner ${owner || "empty"}`,
-    );
-    return { attach: () => {}, detach: () => {} };
+    // Nothing to write to, or nothing to write about. Reported at each use rather than once: this
+    // writer is held for the life of a pane, and one line at construction is scrolled away long
+    // before anyone asks why the index is empty (AGENTS 3-3a).
+    const absent = `commands.execute ${execute ? "present" : "absent"}, owner ${owner || "empty"}`;
+    return {
+      attach: (session, viewId) =>
+        console.error(`terminal: no core index for session ${session} on view ${viewId} — ${absent}`),
+      detach: (session) =>
+        console.error(`terminal: no core index for the detach of session ${session} — ${absent}`),
+    };
   }
   // A refused command answers rather than rejecting: the runner's contract is that every call
   // resolves to {ok:true,…} or {ok:false,code,message}. So a name it does not serve looks exactly

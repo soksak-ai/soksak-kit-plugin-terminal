@@ -81,6 +81,7 @@ function setup(
     context: { setRestoreState: (state) => states.push(state), setTitle: (title) => titles.push(title) },
     config: { pluginId: "plugin", engineId: "vt100", label: { en: "Terminal", ko: "터미널" } },
     engineFor: (engineId) => { engines.push(engineId ?? ""); return { engineId: engineId ?? "vt100", binding }; },
+    index: { attach: () => {}, detach: () => {} },
     stopBarriers,
     restore,
   });
